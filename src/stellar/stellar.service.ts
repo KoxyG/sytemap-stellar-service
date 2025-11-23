@@ -33,12 +33,22 @@ class StellarService {
    * @returns Object with mnemonic, publicKey, encrypted secret, transaction info, and trustline status
    * @throws Error if wallet generation, account creation, or trustline setup fails
    */
-  async generateAndCreateAccount(): Promise<{
-    mnemonic: string;
-    publicKey: string;
-    encryptedSecret: string;
-    transactionHash: string;
-    trustlineAdded: boolean;
+  async generateAndCreateAccount(
+    UserId: number,
+    UserEmail: string,
+    Username: string,
+    DeveloperId: number,
+    BlockchainType: "STELLAR",
+    BlockchainAction: "CREATE"
+  ): Promise<{
+    UserId: number;
+    WalletAddress: string;
+    WalletSecret: string;
+    WalletMnemonic: string;
+    ActivationStatus: boolean;
+    DeveloperId: number;
+    BlockchainType: "STELLAR";
+    BlockchainAction: "CREATE";
   }> {
     const logContext = '[StellarService.generateAndCreateAccount]';
 
@@ -62,9 +72,7 @@ class StellarService {
       publicKey = keypair.publicKey();
       secretKey = keypair.secret();
 
-      logger.debug(
-        `${logContext} Generated mnemonic and keypair for public key ${publicKey}, account index 0`
-      );
+      logger.debug(`${logContext} Generated mnemonic and keypair for public key ${publicKey}, account index 0`);
     } catch (error) {
       logger.error(`${logContext} Failed to generate mnemonic: ${error instanceof Error ? error.message : error}`);
 
@@ -295,11 +303,14 @@ class StellarService {
     logger.debug(`${logContext} Secret key encrypted for ${publicKey}`);
 
     return {
-      mnemonic,
-      publicKey,
-      encryptedSecret,
-      transactionHash,
-      trustlineAdded,
+      UserId: UserId,
+      WalletAddress: publicKey,
+      WalletSecret: encryptedSecret,
+      WalletMnemonic: mnemonic,
+      ActivationStatus: trustlineAdded,
+      DeveloperId: DeveloperId,
+      BlockchainType: BlockchainType,
+      BlockchainAction: BlockchainAction, 
     };
   }
 

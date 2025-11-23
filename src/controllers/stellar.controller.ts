@@ -10,7 +10,24 @@ class StellarController {
    */
   async createAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const result = await stellarService.generateAndCreateAccount();
+      const { UserId, UserEmail, Username, DeveloperId, BlockchainType, BlockchainAction } = req.body as {
+        UserId: number;
+        UserEmail: string;
+        Username: string;
+        DeveloperId: number;
+        BlockchainType: 'STELLAR';
+        BlockchainAction: 'CREATE';
+      };
+
+      const result = await stellarService.generateAndCreateAccount(
+        UserId,
+        UserEmail,
+        Username,
+        DeveloperId,
+        BlockchainType,
+        BlockchainAction
+      );
+
       res.status(201).json({
         success: true,
         data: result,

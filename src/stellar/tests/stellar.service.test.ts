@@ -46,6 +46,21 @@ jest.mock('@stellar/stellar-sdk', () => ({
   TransactionBuilder: jest.fn(() => mockBuilderInstance),
 }));
 
+const mockWallet = {
+  getKeypair: jest.fn().mockReturnValue({
+    publicKey: jest.fn().mockReturnValue('PUBLIC'),
+    secret: jest.fn().mockReturnValue('SECRET'),
+  }),
+};
+
+jest.mock('stellar-hd-wallet', () => ({
+  __esModule: true,
+  default: {
+    generateMnemonic: jest.fn().mockReturnValue('test mnemonic phrase for wallet generation'),
+    fromMnemonic: jest.fn().mockReturnValue(mockWallet),
+  },
+}));
+
 describe('StellarService.generateAndCreateAccount', () => {
   const originalEnv = process.env;
 
@@ -77,7 +92,16 @@ describe('StellarService.generateAndCreateAccount', () => {
 
     const stellarService = await loadService();
 
-    await expect(stellarService.generateAndCreateAccount()).rejects.toThrow('Failed to generate and create account');
+    await expect(
+      stellarService.generateAndCreateAccount(
+        1,
+        'test@example.com',
+        'testuser',
+        1,
+        'STELLAR',
+        'CREATE'
+      )
+    ).rejects.toThrow('Failed to generate and create account');
   });
 
   it('creates account, encrypts secret and adds trustline', async () => {
@@ -96,8 +120,7 @@ describe('StellarService.generateAndCreateAccount', () => {
       secret: jest.fn().mockReturnValue('SECRET'),
       publicKey: jest.fn().mockReturnValue('PUBLIC'),
     };
-    (StellarSdk.Keypair.random as jest.Mock).mockReturnValue(mockKeypair);
-    (StellarSdk.Keypair.fromSecret as jest.Mock).mockReturnValue({ publicKey: jest.fn() });
+    (StellarSdk.Keypair.fromSecret as jest.Mock).mockReturnValue(mockKeypair);
 
     const encryptionService = (await import('../../encryption/encryption.service')).default as unknown as {
       encryptSecretKey: jest.Mock;
@@ -108,13 +131,24 @@ describe('StellarService.generateAndCreateAccount', () => {
     const addTrustlineSpy = jest
       .spyOn(stellarService as unknown as { addTrustline: jest.Mock }, 'addTrustline')
       .mockResolvedValue(undefined);
-    const result = await stellarService.generateAndCreateAccount();
+    const result = await stellarService.generateAndCreateAccount(
+      1,
+      'test@example.com',
+      'testuser',
+      1,
+      'STELLAR',
+      'CREATE'
+    );
 
     expect(result).toEqual({
-      publicKey: 'PUBLIC',
-      encryptedSecret: 'encrypted-secret',
-      transactionHash: 'tx-hash',
-      trustlineAdded: true,
+      UserId: 1,
+      WalletAddress: 'PUBLIC',
+      WalletSecret: 'encrypted-secret',
+      WalletMnemonic: expect.any(String),
+      ActivationStatus: true,
+      DeveloperId: 1,
+      BlockchainType: 'STELLAR',
+      BlockchainAction: 'CREATE',
     });
     expect(encryptionService.encryptSecretKey).toHaveBeenCalledWith('SECRET');
     expect(addTrustlineSpy).toHaveBeenCalledWith('PUBLIC', 'SECRET');
