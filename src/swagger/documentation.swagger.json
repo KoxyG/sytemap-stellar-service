@@ -20,9 +20,7 @@
   "paths": {
     "/welcome": {
       "get": {
-        "tags": [
-          "Welcome"
-        ],
+        "tags": ["Welcome"],
         "summary": "Welcome API Endpoint to start",
         "description": "",
         "responses": {
@@ -91,9 +89,7 @@
     },
     "/create_stellar_account": {
       "post": {
-        "tags": [
-          "Stellar"
-        ],
+        "tags": ["Stellar"],
         "description": "Generate a mnemonic phrase, derive a keypair from it, create a new Stellar account, and return account details including the mnemonic",
         "operationId": "create_stellar_account",
         "responses": {
@@ -157,14 +153,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "UserId",
-                  "UserEmail",
-                  "Username",
-                  "DeveloperId",
-                  "BlockchainType",
-                  "BlockchainAction"
-                ],
+                "required": ["UserId", "UserEmail", "Username", "DeveloperId", "BlockchainType", "BlockchainAction"],
                 "properties": {
                   "UserId": {
                     "type": "integer",
@@ -188,16 +177,12 @@
                   },
                   "BlockchainType": {
                     "type": "string",
-                    "enum": [
-                      "STELLAR"
-                    ],
+                    "enum": ["STELLAR"],
                     "example": "STELLAR"
                   },
                   "BlockchainAction": {
                     "type": "string",
-                    "enum": [
-                      "CREATE"
-                    ],
+                    "enum": ["CREATE"],
                     "example": "CREATE"
                   }
                 }

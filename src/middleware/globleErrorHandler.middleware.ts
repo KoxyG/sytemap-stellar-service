@@ -5,12 +5,11 @@ import { HttpException } from '../exceptions/http.exception';
 import logger from '../utils/logger.utils';
 import appConfig from '../config/app.config';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const globalErrorHandler = (
   err: Error | CustomError | HttpException,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   // Default error response
   let statusCode = 500;

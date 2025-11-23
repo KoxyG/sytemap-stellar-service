@@ -93,14 +93,7 @@ describe('StellarService.generateAndCreateAccount', () => {
     const stellarService = await loadService();
 
     await expect(
-      stellarService.generateAndCreateAccount(
-        1,
-        'test@example.com',
-        'testuser',
-        1,
-        'STELLAR',
-        'CREATE'
-      )
+      stellarService.generateAndCreateAccount(1, 'test@example.com', 'testuser', 1, 'STELLAR', 'CREATE')
     ).rejects.toThrow('Failed to generate and create account');
   });
 

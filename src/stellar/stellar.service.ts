@@ -38,8 +38,8 @@ class StellarService {
     UserEmail: string,
     Username: string,
     DeveloperId: number,
-    BlockchainType: "STELLAR",
-    BlockchainAction: "CREATE"
+    BlockchainType: 'STELLAR',
+    BlockchainAction: 'CREATE'
   ): Promise<{
     UserId: number;
     WalletAddress: string;
@@ -47,8 +47,8 @@ class StellarService {
     WalletMnemonic: string;
     ActivationStatus: boolean;
     DeveloperId: number;
-    BlockchainType: "STELLAR";
-    BlockchainAction: "CREATE";
+    BlockchainType: 'STELLAR';
+    BlockchainAction: 'CREATE';
   }> {
     const logContext = '[StellarService.generateAndCreateAccount]';
 
@@ -310,7 +310,7 @@ class StellarService {
       ActivationStatus: trustlineAdded,
       DeveloperId: DeveloperId,
       BlockchainType: BlockchainType,
-      BlockchainAction: BlockchainAction, 
+      BlockchainAction: BlockchainAction,
     };
   }
 
