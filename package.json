@@ -18,7 +18,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "generate:key": "ts-node scripts/generate-encryption-key.ts"
+    "generate:key": "ts-node scripts/generate-encryption-key.ts",
+    "create:account": "ts-node scripts/create-and-encrypt-account.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^14.3.2",

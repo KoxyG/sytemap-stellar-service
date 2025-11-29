@@ -1,4 +1,4 @@
-import { Asset, Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder } from '@stellar/stellar-sdk';
+import { Asset, Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder, StrKey } from '@stellar/stellar-sdk';
 import StellarHDWallet from 'stellar-hd-wallet';
 import encryptionService from '../encryption/encryption.service';
 
@@ -314,72 +314,315 @@ class StellarService {
     };
   }
 
-  /**
-   * Get and decrypted secret key for a user
-   * @param userUuid - The UUID of the user
-   * @returns Decrypted secret key
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async getSecretKey(userUuid: string): Promise<string> {
-    // TODO: Implement database query to get encrypted secret key for userUuid
-    // ASK FOR AN ENDPOINT THAT CAN RETURN THE SECRET KEY FOR A USER IN THE DATABASE.
 
-    try {
-      // TODO: Replace with actual database query
-      // const user = await this.databaseService.stellar.findUnique({
-      //   where: { owner_uuid: userUuid },
-      //   select: { secret_key: true },
-      // });
-
-      // Temporary placeholder - replace with actual database implementation
-      throw new HttpException(
-        {
-          status: 501,
-          success: false,
-          message: 'Database integration not implemented yet',
-          errorCode: 'FEATURE_NOT_IMPLEMENTED',
-          retryable: false,
-          details: 'This feature is not yet implemented. Please contact support.',
-        },
-        501
-      );
-
-      // TODO: Uncomment when database is ready
-      // if (!user || !user.secret_key) {
-      //   throw new HttpException(
-      //     {
-      //       status: 404,
-      //       success: false,
-      //       message: 'Secret key not found for user',
-      //     },
-      //     404,
-      //   );
-      // }
-
-      // const decryptedSecret = await this.encryptionService.decryptSecretKey(
-      //   user.secret_key,
-      // );
-      // return decryptedSecret;
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
+  async sendSyteTokens(UserId: number, DeveloperId: number, WalletAddress: string, AmountPaid: number): Promise<{
+    UserId: number; DeveloperId: number; WalletAddress: string; TransactionStatus: boolean; TransactionReference: string; TokenIssued: number; TokenType: "SYTE"
+  }> {
+    const logContext = '[StellarService.sendSyteTokens]';
+    
+    if (!process.env.STELLAR_HORIZON_URL) {
+      logger.error(`${logContext} Missing STELLAR_HORIZON_URL`);
       throw new HttpException(
         {
           status: 500,
           success: false,
-          message: 'Failed to retrieve secret key',
-          errorCode: 'SECRET_KEY_RETRIEVAL_FAILED',
-          retryable: true,
-          retryAfter: 3,
-          details: 'An error occurred while retrieving the secret key. Please retry the request.',
+          message: 'STELLAR_HORIZON_URL not configured',
+          errorCode: 'CONFIG_MISSING_HORIZON_URL',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
         },
         500
       );
     }
+
+    if (!process.env.SYTE_DISTRIBUTOR_ADDRESS) {
+      logger.error(`${logContext} Missing SYTE_DISTRIBUTOR_ADDRESS`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'SYTE_DISTRIBUTOR_ADDRESS not configured',
+          errorCode: 'CONFIG_MISSING_DISTRIBUTOR_ADDRESS',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500
+      );
+    }
+
+    if (!process.env.SYTE_DISTRIBUTOR_PRIVATE_KEY) {
+      logger.error(`${logContext} Missing SYTE_DISTRIBUTOR_PRIVATE_KEY`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'SYTE_DISTRIBUTOR_PRIVATE_KEY not configured',
+          errorCode: 'CONFIG_MISSING_DISTRIBUTOR_SECRET',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500
+      );
+    }
+
+    if (!process.env.SPONSOR_PRIVATE_KEY) {
+      logger.error(`${logContext} Missing SPONSOR_PRIVATE_KEY`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'SPONSOR_PRIVATE_KEY not configured',
+          errorCode: 'CONFIG_MISSING_SPONSOR_SECRET',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500
+      );
+    }
+
+    if (!process.env.SYTE_ASSET_CODE) {
+      logger.error(`${logContext} Missing SYTE_ASSET_CODE`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'SYTE_ASSET_CODE not configured',
+          errorCode: 'CONFIG_MISSING_ASSET_CODE',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500
+      );
+    }
+
+    if (!process.env.SYTE_ISSUER_ADDRESS) {
+      logger.error(`${logContext} Missing SYTE_ISSUER_ADDRESS`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'SYTE_ISSUER_ADDRESS not configured',
+          errorCode: 'CONFIG_MISSING_ISSUER_ADDRESS',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500
+      );
+    }
+
+    // Validate wallet address
+    if (!WalletAddress || typeof WalletAddress !== 'string') {
+      logger.error(`${logContext} Invalid WalletAddress: ${WalletAddress}`);
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address',
+          errorCode: 'INVALID_WALLET_ADDRESS',
+          retryable: false,
+          details: 'The provided wallet address is invalid or missing. Please provide a valid Stellar public key.',
+        },
+        400
+      );
+    }
+
+    // Validate Stellar public key format
+    if (!StrKey.isValidEd25519PublicKey(WalletAddress)) {
+      logger.error(`${logContext} Invalid Stellar public key format: ${WalletAddress}`);
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address format',
+          errorCode: 'INVALID_WALLET_ADDRESS_FORMAT',
+          retryable: false,
+          details: 'The wallet address must be a valid Stellar public key (starts with G and is 56 characters long).',
+        },
+        400
+      );
+    }
+
+    // Validate AmountPaid
+    if (!AmountPaid || typeof AmountPaid !== 'number' || AmountPaid <= 0) {
+      logger.error(`${logContext} Invalid AmountPaid: ${AmountPaid}`);
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid amount',
+          errorCode: 'INVALID_AMOUNT',
+          retryable: false,
+          details: 'The amount must be a positive number greater than zero.',
+        },
+        400
+      );
+    }
+
+    const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
+    const vaultAddress = await server.loadAccount(process.env.SYTE_DISTRIBUTOR_ADDRESS);
+    const vaultKeypair = Keypair.fromSecret(process.env.SYTE_DISTRIBUTOR_PRIVATE_KEY);
+    const feeKeypair = Keypair.fromSecret(process.env.SPONSOR_PRIVATE_KEY);
+
+    // Create asset object
+    const paymentAsset = new Asset(process.env.SYTE_ASSET_CODE, process.env.SYTE_ISSUER_ADDRESS);
+
+    // Start transaction
+    const transaction = new TransactionBuilder(vaultAddress, {
+      fee: BASE_FEE,
+      networkPassphrase: this.params.networkPassphrase,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: WalletAddress,
+          asset: paymentAsset,
+          amount: AmountPaid.toString(),
+        }),
+      )
+      .setTimeout(180)
+      .build();
+    transaction.sign(vaultKeypair);
+
+    // Build the fee-bump transaction
+    const feeBumpTransaction = TransactionBuilder.buildFeeBumpTransaction(
+      feeKeypair,
+      (Number(BASE_FEE) * 2).toString(),
+      transaction,
+      this.params.networkPassphrase,
+    );
+
+    // Sign the fee-bump transaction with the fee account
+    feeBumpTransaction.sign(feeKeypair);
+    
+    try {
+      const result = await server.submitTransaction(feeBumpTransaction);
+      logger.info(`${logContext} SYTE tokens sent successfully. Hash: ${result.hash}`);
+
+      return {
+        UserId: UserId,
+        DeveloperId: DeveloperId,
+        WalletAddress: WalletAddress,
+        TransactionStatus: true,
+        TransactionReference: result.hash,
+        TokenIssued: AmountPaid,
+        TokenType: "SYTE"
+      };
+    } catch (error) {
+      logger.error(`${logContext} Failed to send SYTE tokens: ${error instanceof Error ? error.message : error}`);
+      
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // Handle invalid destination error
+      if (error instanceof Error && error.message.includes('destination is invalid')) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Invalid wallet address',
+            errorCode: 'INVALID_DESTINATION_ADDRESS',
+            retryable: false,
+            details: 'The provided wallet address is not a valid Stellar public key. Please check the address and try again.',
+          },
+          400,
+        );
+      }
+
+      const errorDetails = (error as { response?: { data?: { extras?: { result_codes?: { operations?: string[] } } } } })?.response?.data?.extras;
+      const operations = errorDetails?.result_codes?.operations;
+
+      // Check error message as fallback (in case operations array format is different)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorString = JSON.stringify(error);
+
+      // Handle case where destination account doesn't have trustline for SYTE token
+      // Check both operations array and error message/string
+      if (
+        (operations && operations.includes('op_no_destination')) ||
+        errorMessage.includes('op_no_destination') ||
+        errorString.includes('op_no_destination')
+      ) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Account not activivated',
+            errorCode: 'NO_TRUSTLINE',
+            retryable: false,
+            details: 'The destination wallet does not have a trustline for SYTE tokens. The wallet must first establish a trustline for SYTE tokens before receiving them.',
+          },
+          400,
+        );
+      }
+
+      // Custom error handling for insufficient balance
+      if (
+        (operations && operations.includes('op_underfunded')) ||
+        errorMessage.includes('op_underfunded') ||
+        errorString.includes('op_underfunded')
+      ) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Service not available',
+            errorCode: 'INSUFFICIENT_FUNDS',
+            retryable: false,
+            details: 'The distributor account has insufficient funds to send tokens.',
+          },
+          400,
+        );
+      }
+
+      // Handle case where destination account doesn't exist
+      if (operations && operations.includes('op_no_account')) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Account does not exist',
+            errorCode: 'ACCOUNT_NOT_FOUND',
+            retryable: false,
+            details: 'The destination wallet address does not exist on the Stellar network. Please verify the wallet address.',
+          },
+          400,
+        );
+      }
+
+      // Handle other Stellar operation errors
+      if (operations && operations.length > 0) {
+        const errorMessage = operations.join(', ');
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Transaction failed',
+            errorCode: 'STELLAR_OPERATION_ERROR',
+            retryable: true,
+            retryAfter: 5,
+            details: `Stellar operation error: ${errorMessage}`,
+          },
+          400,
+        );
+      }
+
+      // Throw generic error if no specific handling
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'Failed to send SYTE tokens',
+          errorCode: 'TOKEN_SEND_FAILED',
+          retryable: true,
+          retryAfter: 5,
+          details: error instanceof Error ? error.message : 'An error occurred while sending SYTE tokens. Please retry the request.',
+        },
+        500,
+      );
+    }
   }
 
+  
   /**
    * Add trustline for SYTE currency using provided keys.
    * @param publicKey - Account public key
@@ -487,8 +730,57 @@ class StellarService {
       const paymentAsset = new Asset(process.env.SYTE_ASSET_CODE, process.env.SYTE_ISSUER_ADDRESS);
       const sourceAccount = await server.loadAccount(sponsorPubKey);
       logger.debug(`${logContext} Loaded sponsor account ${sponsorPubKey}`);
-      const userKeypair = Keypair.fromSecret(decryptedSecret);
-      logger.debug(`${logContext} Prepared trustline transaction context for ${publicKey}`);
+      
+      // Validate and create user keypair
+      let userKeypair: Keypair;
+      try {
+        userKeypair = Keypair.fromSecret(decryptedSecret);
+        const derivedPublicKey = userKeypair.publicKey();
+        if (derivedPublicKey !== publicKey) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Secret key does not match wallet address',
+              errorCode: 'SECRET_KEY_MISMATCH',
+              retryable: false,
+              details: `The secret key does not match the wallet address. Expected: ${publicKey}, Got: ${derivedPublicKey}`,
+            },
+            400,
+          );
+        }
+        logger.debug(`${logContext} Prepared trustline transaction context for ${publicKey}`);
+      } catch (error) {
+        if (error instanceof HttpException) {
+          throw error;
+        }
+        
+        if (error instanceof Error && error.message.includes('Invalid secret key')) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Invalid secret key format',
+              errorCode: 'INVALID_SECRET_KEY_FORMAT',
+              retryable: false,
+              details: 'The provided secret key is not a valid Stellar secret key format.',
+            },
+            400,
+          );
+        }
+        
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Failed to create keypair from secret key',
+            errorCode: 'KEYPAIR_CREATION_FAILED',
+            retryable: false,
+            details: 'The secret key could not be used to create a keypair. Please verify the secret key is correct.',
+          },
+          400,
+        );
+      }
 
       const transaction = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
@@ -518,19 +810,195 @@ class StellarService {
       transaction.sign(userKeypair);
       logger.debug(`${logContext} Signed trustline transaction for ${publicKey}`);
 
+      // Check if trustline already exists before attempting to add it
+      try {
+        const account = await server.loadAccount(publicKey);
+        const trustlineExists = account.balances.some(
+          (balance: any) =>
+            balance.asset_type !== 'native' &&
+            balance.asset_code === process.env.SYTE_ASSET_CODE &&
+            balance.asset_issuer === process.env.SYTE_ISSUER_ADDRESS
+        );
+
+        if (trustlineExists) {
+          logger.info(`${logContext} Trustline already exists for ${publicKey}`);
+          return; // Trustline already exists, no need to add it
+        }
+      } catch (accountError) {
+        // If account doesn't exist, we'll let the transaction fail with a more specific error
+        logger.debug(`${logContext} Could not check account status: ${accountError instanceof Error ? accountError.message : accountError}`);
+      }
+
       await server.submitTransaction(transaction);
       logger.info(`Trustline added successfully for account: ${publicKey}`);
     } catch (error) {
+      // Log detailed error information for debugging - capture everything
+      const errorLog: any = {
+        errorType: error?.constructor?.name || typeof error,
+      };
+      
+      if (error instanceof Error) {
+        errorLog.message = error.message;
+        errorLog.stack = error.stack;
+        errorLog.name = error.name;
+      }
+      
+      // Capture Stellar SDK error response structure
+      const errorAny = error as any;
+      if (errorAny.response) {
+        errorLog.response = {
+          status: errorAny.response.status,
+          statusText: errorAny.response.statusText,
+          data: errorAny.response.data,
+        };
+      }
+      
+      // Also capture any other properties
+      if (errorAny.extras) {
+        errorLog.extras = errorAny.extras;
+      }
+      if (errorAny.result_codes) {
+        errorLog.result_codes = errorAny.result_codes;
+      }
+      
       logger.error(
-        `${logContext} Failed to add trustline for ${publicKey}: ${error instanceof Error ? error.message : error}`
+        `${logContext} Failed to add trustline for ${publicKey}: ${JSON.stringify(errorLog, null, 2)}`
       );
 
       if (error instanceof HttpException) {
         throw error;
       }
 
+      // Check for Stellar transaction response errors - handle multiple possible error structures
+      const stellarError = error as {
+        response?: {
+          status?: number;
+          data?: {
+            extras?: {
+              result_codes?: {
+                transaction?: string;
+                operations?: string[];
+              };
+            };
+            type?: string;
+            title?: string;
+            detail?: string;
+          };
+        };
+        message?: string;
+        name?: string;
+        extras?: {
+          result_codes?: {
+            transaction?: string;
+            operations?: string[];
+          };
+        };
+        result_codes?: {
+          transaction?: string;
+          operations?: string[];
+        };
+      };
+
+      // Try to extract error codes from different possible locations
+      // Stellar SDK errors can have the structure in multiple places:
+      // 1. error.response.data.extras.result_codes (most common)
+      // 2. error.extras.result_codes (alternative)
+      // 3. error.result_codes (direct)
+      const errorDetails = stellarError?.response?.data?.extras || stellarError?.extras;
+      const transactionCode = errorDetails?.result_codes?.transaction || stellarError?.result_codes?.transaction;
+      const operations = errorDetails?.result_codes?.operations || stellarError?.result_codes?.operations || [];
+      const errorMessage = stellarError?.message || '';
+      const errorString = JSON.stringify(error);
+      
+      // Also check the error message and stringified error for operation codes
+      const allErrorText = `${errorMessage} ${errorString}`.toLowerCase();
+
+      // Handle transaction-level errors
+      if (transactionCode) {
+        if (transactionCode === 'tx_bad_auth') {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Transaction authorization failed',
+              errorCode: 'STELLAR_AUTH_FAILED',
+              retryable: false,
+              details: 'The transaction could not be authorized. This usually means the secret key does not match the wallet address or the account does not exist.',
+            },
+            400,
+          );
+        } else if (transactionCode === 'tx_bad_seq') {
+          throw new HttpException(
+            {
+              status: 503,
+              success: false,
+              message: 'Service temporarily unavailable, please try again',
+              errorCode: 'STELLAR_SEQUENCE_ERROR',
+              retryable: true,
+              retryAfter: 5,
+              details: 'The Stellar network is experiencing high load. Please retry after a few seconds.',
+            },
+            503,
+          );
+        }
+      }
+
+      // Handle operation-level errors
+      if (operations && operations.length > 0) {
+        if (operations.includes('op_no_account')) {
+          throw new HttpException(
+            {
+              status: 404,
+              success: false,
+              message: 'Account does not exist',
+              errorCode: 'ACCOUNT_NOT_FOUND',
+              retryable: false,
+              details: 'The wallet address does not exist on the Stellar network. Please verify the wallet address.',
+            },
+            404,
+          );
+        } else if (operations.includes('op_bad_auth')) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Secret key does not match wallet address',
+              errorCode: 'SECRET_KEY_MISMATCH',
+              retryable: false,
+              details: 'The provided secret key does not belong to the specified wallet address. Please ensure the secret key matches the wallet address.',
+            },
+            400,
+          );
+        } else if (operations.includes('op_line_full')) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Trustline limit reached',
+              errorCode: 'TRUSTLINE_LIMIT_REACHED',
+              retryable: false,
+              details: 'The trustline limit has been reached. Cannot add more trustlines to this account.',
+            },
+            400,
+          );
+        } else if (operations.includes('op_low_reserve')) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Insufficient reserves',
+              errorCode: 'INSUFFICIENT_RESERVES',
+              retryable: false,
+              details: 'The account does not have sufficient reserves to add the trustline.',
+            },
+            400,
+          );
+        }
+      }
+
+      // Check error message and stringified error for operation codes (fallback)
       if (error instanceof Error) {
-        if (error.message.includes('op_underfunded')) {
+        if (allErrorText.includes('op_underfunded') || allErrorText.includes('underfunded')) {
           throw new HttpException(
             {
               status: 400,
@@ -543,7 +1011,7 @@ class StellarService {
             },
             400
           );
-        } else if (error.message.includes('tx_bad_seq')) {
+        } else if (allErrorText.includes('tx_bad_seq') || allErrorText.includes('bad_seq')) {
           throw new HttpException(
             {
               status: 503,
@@ -556,7 +1024,7 @@ class StellarService {
             },
             503
           );
-        } else if (error.message.includes('op_no_trust')) {
+        } else if (allErrorText.includes('op_no_trust') || allErrorText.includes('no_trust')) {
           throw new HttpException(
             {
               status: 400,
@@ -569,7 +1037,31 @@ class StellarService {
             },
             400
           );
-        } else if (error.message.includes('timeout') || error.message.includes('TIMEOUT')) {
+        } else if (allErrorText.includes('op_line_full') || allErrorText.includes('line_full')) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Trustline limit reached',
+              errorCode: 'TRUSTLINE_LIMIT_REACHED',
+              retryable: false,
+              details: 'The trustline limit has been reached. Cannot add more trustlines to this account.',
+            },
+            400
+          );
+        } else if (allErrorText.includes('op_low_reserve') || allErrorText.includes('low_reserve')) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Insufficient reserves',
+              errorCode: 'INSUFFICIENT_RESERVES',
+              retryable: false,
+              details: 'The account does not have sufficient reserves to add the trustline.',
+            },
+            400
+          );
+        } else if (allErrorText.includes('timeout') || allErrorText.includes('TIMEOUT')) {
           throw new HttpException(
             {
               status: 504,
@@ -582,7 +1074,7 @@ class StellarService {
             },
             504
           );
-        } else if (error.message.includes('network') || error.message.includes('connection')) {
+        } else if (allErrorText.includes('network') || allErrorText.includes('connection') || allErrorText.includes('econnrefused')) {
           throw new HttpException(
             {
               status: 503,
@@ -595,8 +1087,66 @@ class StellarService {
             },
             503
           );
+        } else if (allErrorText.includes('op_already_exists') || allErrorText.includes('already_exists')) {
+          // Trustline might already exist - this is actually a success case
+          logger.info(`${logContext} Trustline already exists for ${publicKey}`);
+          return; // Trustline already exists, treat as success
         }
       }
+
+      // If we have a response with status code, use it for better error messages
+      if (stellarError?.response?.status) {
+        const status = stellarError.response.status;
+        if (status === 400) {
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'Invalid transaction request',
+              errorCode: 'STELLAR_BAD_REQUEST',
+              retryable: false,
+              details: stellarError.response.data?.detail || 'The transaction request was invalid. Please check the wallet address and secret key.',
+            },
+            400,
+          );
+        } else if (status === 404) {
+          throw new HttpException(
+            {
+              status: 404,
+              success: false,
+              message: 'Account not found',
+              errorCode: 'ACCOUNT_NOT_FOUND',
+              retryable: false,
+              details: 'The wallet address does not exist on the Stellar network.',
+            },
+            404,
+          );
+        } else if (status >= 500) {
+          throw new HttpException(
+            {
+              status: 503,
+              success: false,
+              message: 'Stellar network error',
+              errorCode: 'STELLAR_SERVER_ERROR',
+              retryable: true,
+              retryAfter: 10,
+              details: 'The Stellar network is experiencing issues. Please retry after a few seconds.',
+            },
+            503,
+          );
+        }
+      }
+
+      // Last resort - provide detailed error information
+      const detailedError = {
+        message: errorMessage,
+        transactionCode,
+        operations,
+        responseStatus: stellarError?.response?.status,
+        responseData: stellarError?.response?.data,
+      };
+      
+      logger.error(`${logContext} Unhandled error details: ${JSON.stringify(detailedError, null, 2)}`);
 
       throw new HttpException(
         {
@@ -606,12 +1156,531 @@ class StellarService {
           errorCode: 'TRUSTLINE_ADDITION_FAILED',
           retryable: true,
           retryAfter: 5,
-          details: 'An unexpected error occurred while adding the trustline. Please retry the request.',
+          details: `An unexpected error occurred while adding the trustline. ${transactionCode ? `Transaction code: ${transactionCode}. ` : ''}${operations.length > 0 ? `Operation codes: ${operations.join(', ')}. ` : ''}Please check the logs for more details.`,
         },
         500
       );
     }
   }
+
+  /**
+   * Admin function to activate SYTE token trustline for a wallet
+   * 
+   * IMPORTANT: Only use this function if you are certain that:
+   * - The account already exists on the Stellar network (on-chain)
+   * - The account only lacks the SYTE token trustline activation
+   * 
+   * This function will fail if the account does not exist on-chain.
+   * 
+   * @param walletAddress - Stellar wallet address (must exist on-chain)
+   * @param encryptedSecretKey - Encrypted secret key for the wallet
+   * @returns Activation status
+   */
+  async activateSyteTokenTrustline(
+    walletAddress: string,
+    encryptedSecretKey: string
+  ): Promise<{
+    WalletAddress: string;
+    ActivationStatus: boolean;
+    message: string;
+  }> {
+    const logContext = '[StellarService.activateSyteTokenTrustline]';
+
+    // Validate wallet address
+    if (!walletAddress) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Wallet address is required',
+          errorCode: 'MISSING_WALLET_ADDRESS',
+          retryable: false,
+          details: 'Wallet address must be provided.',
+        },
+        400,
+      );
+    }
+
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address format',
+          errorCode: 'INVALID_WALLET_ADDRESS_FORMAT',
+          retryable: false,
+          details: 'The wallet address must be a valid Stellar public key.',
+        },
+        400,
+      );
+    }
+
+    if (!encryptedSecretKey) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Encrypted secret key is required',
+          errorCode: 'MISSING_ENCRYPTED_SECRET_KEY',
+          retryable: false,
+          details: 'Encrypted secret key must be provided.',
+        },
+        400,
+      );
+    }
+
+    // Decrypt the secret key
+    let secretKey: string;
+    try {
+      secretKey = await this.encryptionService.decryptSecretKey(encryptedSecretKey);
+      logger.debug(`${logContext} Secret key decrypted for wallet ${walletAddress}`);
+    } catch (error) {
+      logger.error(`${logContext} Failed to decrypt secret key: ${error instanceof Error ? error.message : error}`);
+      
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'Failed to decrypt secret key',
+          errorCode: 'SECRET_KEY_DECRYPTION_FAILED',
+          retryable: false,
+          details: 'An error occurred while decrypting the secret key. Make sure the encrypted secret key is the one provided during account creation',
+        },
+        500,
+      );
+    }
+
+    // Validate that the secret key matches the wallet address
+    try {
+      const keypair = Keypair.fromSecret(secretKey);
+      const derivedPublicKey = keypair.publicKey();
+      
+      if (derivedPublicKey !== walletAddress) {
+        logger.error(`${logContext} Secret key mismatch. Wallet: ${walletAddress}, Derived: ${derivedPublicKey}`);
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Secret key does not match wallet address',
+            errorCode: 'SECRET_KEY_MISMATCH',
+            retryable: false,
+            details: 'The provided encrypted secret key does not belong to the specified wallet address. Please ensure the secret key matches the wallet address.',
+          },
+          400,
+        );
+      }
+      logger.debug(`${logContext} Secret key validated - matches wallet address`);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // Handle invalid secret key format
+      if (error instanceof Error && (error.message.includes('Invalid secret key') || error.message.includes('invalid'))) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Invalid secret key format',
+            errorCode: 'INVALID_SECRET_KEY_FORMAT',
+            retryable: false,
+            details: 'The decrypted secret key is not a valid Stellar secret key format.',
+          },
+          400,
+        );
+      }
+
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Secret key validation failed',
+          errorCode: 'SECRET_KEY_VALIDATION_FAILED',
+          retryable: false,
+          details: 'Failed to validate the secret key. Please check that the encrypted secret key is correct.',
+        },
+        400,
+      );
+    }
+
+    // Check if trustline already exists before attempting to add it
+    try {
+      if (!process.env.SYTE_ASSET_CODE || !process.env.SYTE_ISSUER_ADDRESS || !process.env.STELLAR_HORIZON_URL) {
+        logger.warn(`${logContext} SYTE_ASSET_CODE, SYTE_ISSUER_ADDRESS, or STELLAR_HORIZON_URL not configured, skipping trustline check`);
+      } else {
+        const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
+        const account = await server.loadAccount(walletAddress);
+        const trustlineExists = account.balances.some(
+          (balance: any) =>
+            balance.asset_type !== 'native' &&
+            balance.asset_code === process.env.SYTE_ASSET_CODE &&
+            balance.asset_issuer === process.env.SYTE_ISSUER_ADDRESS
+        );
+
+        if (trustlineExists) {
+          logger.info(`${logContext} Trustline already exists for ${walletAddress}`);
+          return {
+            WalletAddress: walletAddress,
+            ActivationStatus: true,
+            message: 'SYTE token trustline is already activated for this wallet',
+          };
+        }
+      }
+    } catch (accountError) {
+      // If account doesn't exist, we'll let addTrustline handle the error
+      if (accountError instanceof Error && accountError.message.includes('404')) {
+        logger.error(`${logContext} Account does not exist on Stellar network: ${walletAddress}`);
+        throw new HttpException(
+          {
+            status: 404,
+            success: false,
+            message: 'Account does not exist on Stellar network',
+            errorCode: 'ACCOUNT_NOT_FOUND',
+            retryable: false,
+            details: 'The wallet address does not exist on the Stellar network. Please ensure the account has been created on-chain before activating the trustline.',
+          },
+          404,
+        );
+      }
+      logger.debug(`${logContext} Could not check account status: ${accountError instanceof Error ? accountError.message : accountError}`);
+    }
+
+    // Use the existing addTrustline method (same as in generateAndCreateAccount)
+    try {
+      logger.debug(`${logContext} Initiating trustline setup for ${walletAddress}`);
+      await this.addTrustline(walletAddress, secretKey);
+      logger.info(`${logContext} SYTE token trustline activated successfully for wallet ${walletAddress}`);
+
+      return {
+        WalletAddress: walletAddress,
+        ActivationStatus: true,
+        message: 'SYTE token trustline activated successfully',
+      };
+    } catch (error) {
+      logger.error(
+        `${logContext} Failed to add trustline for ${walletAddress}: ${error instanceof Error ? error.message : error}`
+      );
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'Failed to activate SYTE token trustline',
+          errorCode: 'TRUSTLINE_ACTIVATION_FAILED',
+          retryable: true,
+          retryAfter: 5,
+          details: 'An error occurred while activating the trustline. Please retry the request.',
+        },
+        500,
+      );
+    }
+  }
+
+  /**
+   * Get wallet assets
+   * @param walletAddress - Stellar wallet address
+   * @returns Wallet details with balances
+   */
+  async GetStellarWallet(walletAddress: string): Promise<{
+    status: number;
+    success: boolean;
+    message: string;
+    data: {
+      wallet: {
+        address: string;
+        network: string;
+        balances: any[];
+      };
+    };
+  }> {
+    const logContext = '[StellarService.GetStellarWallet]';
+    
+    if (!walletAddress) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Wallet address is required',
+          errorCode: 'MISSING_WALLET_ADDRESS',
+          retryable: false,
+          details: 'Wallet address must be provided.',
+        },
+        400,
+      );
+    }
+
+    // Validate wallet address format
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address format',
+          errorCode: 'INVALID_WALLET_ADDRESS_FORMAT',
+          retryable: false,
+          details: 'The wallet address must be a valid Stellar public key.',
+        },
+        400,
+      );
+    }
+
+    if (!process.env.STELLAR_HORIZON_URL) {
+      logger.error(`${logContext} Missing STELLAR_HORIZON_URL`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'STELLAR_HORIZON_URL not configured',
+          errorCode: 'CONFIG_MISSING_HORIZON_URL',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500,
+      );
+    }
+
+    // Get initial balances
+    const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
+    const currentBalances = await this.getStellarAssetBalances(walletAddress, server);
+
+    return {
+      status: 200,
+      success: true,
+      message: 'Wallet details retrieved successfully',
+      data: {
+        wallet: {
+          address: walletAddress,
+          network: this.params.networkPassphrase === Networks.PUBLIC ? 'mainnet' : 'testnet',
+          balances: currentBalances,
+        },
+      },
+    };
+  }
+
+  /**
+   * Get all transaction history
+   * @param walletAddress - Stellar wallet address
+   * @returns Transaction history
+   */
+  async getStellarAllTransactionHistory(walletAddress: string): Promise<{
+    status: number;
+    success: boolean;
+    message: string;
+    data: {
+      walletAddress: string;
+      totalTransactions: number;
+      transactions: any[];
+    };
+  }> {
+    const logContext = '[StellarService.getStellarAllTransactionHistory]';
+
+    if (!walletAddress) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Wallet address is required',
+          errorCode: 'MISSING_WALLET_ADDRESS',
+          retryable: false,
+          details: 'Wallet address must be provided.',
+        },
+        400,
+      );
+    }
+
+    // Validate wallet address format
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address format',
+          errorCode: 'INVALID_WALLET_ADDRESS_FORMAT',
+          retryable: false,
+          details: 'The wallet address must be a valid Stellar public key.',
+        },
+        400,
+      );
+    }
+
+    if (!process.env.STELLAR_HORIZON_URL) {
+      logger.error(`${logContext} Missing STELLAR_HORIZON_URL`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'STELLAR_HORIZON_URL not configured',
+          errorCode: 'CONFIG_MISSING_HORIZON_URL',
+          retryable: false,
+          details: 'Server configuration error. Please contact support.',
+        },
+        500,
+      );
+    }
+
+    const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
+
+    const transactions = await server
+      .transactions()
+      .forAccount(walletAddress)
+      .limit(10) // Adjust limit as needed
+      .order('desc') // Most recent first
+      .call();
+
+    // Extract ALL operation details (not just payments)
+    const allTransactionDetails = await Promise.all(
+      transactions.records.map(async (transaction) => {
+        const operations = await transaction.operations();
+        return operations.records
+          .filter((op) => {
+            // Filter out sponsorship and internal operations
+            const excludedOperations = [
+              'begin_sponsoring_future_reserves',
+              'end_sponsoring_future_reserves',
+              'create_claimable_balance',
+              'claim_claimable_balance',
+              'clawback',
+              'clawback_claimable_balance',
+              'set_trust_line_flags',
+              'liquidity_pool_deposit',
+              'liquidity_pool_withdraw',
+              'inflation',
+              'manage_data',
+              'bump_sequence',
+              'extend_footprint_ttl',
+              'restore_footprint',
+              'change_trust',
+              'create_account',
+            ];
+            return !excludedOperations.includes(op.type);
+          })
+          .map((op) => ({
+            operationType: op.type,
+            amount:
+              (op as any).amount ||
+              (op as any).limit ||
+              (op as any).starting_balance ||
+              null,
+            asset:
+              (op as any).asset_type === 'native'
+                ? 'XLM'
+                : (op as any).asset_code || null,
+            from: (op as any).from || null,
+            to: (op as any).to || null,
+            timestamp: transaction.created_at,
+            status: 'success',
+            description: this.getOperationDescription(
+              op.type,
+              walletAddress,
+              op,
+            ),
+          }));
+      }),
+    ).then((results) => results.flat()); // Flatten the nested arrays
+
+    return {
+      status: 200,
+      success: true,
+      message: 'All transactions fetched successfully',
+      data: {
+        walletAddress: walletAddress,
+        totalTransactions: allTransactionDetails.length,
+        transactions: allTransactionDetails,
+      },
+    };
+  }
+
+
+  // Private function
+  private async getStellarAssetBalances(
+    walletAddress: string,
+    server: Horizon.Server,
+  ): Promise<any[]> {
+    const logContext = '[StellarService.getStellarAssetBalances]';
+    try {
+      const account = await server.accounts().accountId(walletAddress).call();
+      return account.balances;
+    } catch (error) {
+      logger.error(`${logContext} Failed to get balances: ${error instanceof Error ? error.message : error}`);
+      
+      if (error && typeof error === 'object' && 'response' in error) {
+        const httpError = error as { response?: { status?: number } };
+        if (httpError.response?.status === 404) {
+          throw new HttpException(
+            {
+              status: 404,
+              success: false,
+              message: 'Wallet account not found',
+              errorCode: 'ACCOUNT_NOT_FOUND',
+              retryable: false,
+              details: 'The wallet address does not exist on the Stellar network.',
+            },
+            404,
+          );
+        }
+      }
+      
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'Failed to retrieve wallet balances',
+          errorCode: 'BALANCE_RETRIEVAL_FAILED',
+          retryable: true,
+          retryAfter: 5,
+          details: 'An error occurred while retrieving wallet balances. Please retry the request.',
+        },
+        500,
+      );
+    }
+  }
+
+   // Helper method to get operation descriptions
+   private getOperationDescription(
+    operationType: string,
+    walletAddress: string,
+    op: any,
+  ): string {
+    switch (operationType) {
+      case 'payment':
+        return op.from === walletAddress ? 'Payment Sent' : 'Payment Received';
+      case 'change_trust':
+        return 'Trustline Added';
+      case 'create_account':
+        return 'Account Created';
+      case 'account_merge':
+        return 'Account Merged';
+      case 'set_options':
+        return 'Account Settings Changed';
+      case 'allow_trust':
+        return 'Trust Authorization Changed';
+      case 'path_payment_strict_send':
+        return 'Path Payment Sent';
+      case 'path_payment_strict_receive':
+        return 'Path Payment Received';
+      case 'manage_sell_offer':
+        return 'Sell Offer';
+      case 'create_passive_sell_offer':
+        return 'Passive Sell Offer';
+      case 'inflation':
+        return 'Inflation Operation';
+      case 'manage_data':
+        return 'Data Entry Modified';
+      case 'bump_sequence':
+        return 'Sequence Bumped';
+      default:
+        return `Operation: ${operationType}`;
+    }
+  }
+
 }
 
 // Export singleton instance

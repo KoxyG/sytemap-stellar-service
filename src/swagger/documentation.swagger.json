@@ -98,57 +98,7 @@
         "operationId": "create_stellar_account",
         "responses": {
           "201": {
-            "description": "Account created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "UserId": {
-                          "type": "integer",
-                          "example": 1
-                        },
-                        "WalletAddress": {
-                          "type": "string",
-                          "example": "GDUQ..."
-                        },
-                        "WalletSecret": {
-                          "type": "string",
-                          "example": "encrypted-secret-key"
-                        },
-                        "WalletMnemonic": {
-                          "type": "string",
-                          "example": "word1 word2 word3..."
-                        },
-                        "ActivationStatus": {
-                          "type": "boolean",
-                          "example": true
-                        },
-                        "DeveloperId": {
-                          "type": "integer",
-                          "example": 1
-                        },
-                        "BlockchainType": {
-                          "type": "string",
-                          "example": "STELLAR"
-                        },
-                        "BlockchainAction": {
-                          "type": "string",
-                          "example": "CREATE"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "description": "Created"
           }
         },
         "requestBody": {
@@ -199,6 +149,143 @@
                       "CREATE"
                     ],
                     "example": "CREATE"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/send_syte_tokens": {
+      "post": {
+        "tags": [
+          "Stellar"
+        ],
+        "description": "Send SYTE tokens to a specified wallet address",
+        "operationId": "send_syte_tokens",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "UserId",
+                  "DeveloperId",
+                  "WalletAddress",
+                  "AmountPaid"
+                ],
+                "properties": {
+                  "UserId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "DeveloperId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "WalletAddress": {
+                    "type": "string",
+                    "example": "GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ"
+                  },
+                  "AmountPaid": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 100
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get_stellar_wallet": {
+      "get": {
+        "tags": [
+          "Stellar"
+        ],
+        "description": "Get wallet details and balances for a Stellar wallet address",
+        "operationId": "get_stellar_wallet",
+        "parameters": [
+          {
+            "name": "walletAddress",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      }
+    },
+    "/get_stellar_transaction_history": {
+      "get": {
+        "tags": [
+          "Stellar"
+        ],
+        "description": "Get all transaction history for a Stellar wallet address",
+        "operationId": "get_stellar_transaction_history",
+        "parameters": [
+          {
+            "name": "walletAddress",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      }
+    },
+    "/activate_syte_token_trustline": {
+      "post": {
+        "tags": [
+          "Stellar"
+        ],
+        "description": "Admin function to activate SYTE token trustline for a wallet address. IMPORTANT: Only use this function if you are certain that the account already exists on the Stellar network and only lacks the SYTE token trustline activation. This function will fail if the account does not exist on-chain.",
+        "operationId": "activate_syte_token_trustline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "WalletAddress",
+                  "EncryptedSecretKey"
+                ],
+                "properties": {
+                  "WalletAddress": {
+                    "type": "string",
+                    "example": "GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ",
+                    "description": "Stellar wallet address (public key)"
+                  },
+                  "EncryptedSecretKey": {
+                    "type": "string",
+                    "example": "encrypted-secret-key-here",
+                    "description": "Encrypted secret key for the wallet"
                   }
                 }
               }
