@@ -2245,26 +2245,49 @@ class StellarService {
               `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
             );
             break; // Success, exit retry loop
-          } catch (loadError) {
+          } catch (loadError: any) {
             lastError = loadError;
             retries--;
 
             const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
-            logger.warn(
-              `${logContext} Failed to load distributor account (attempt ${4 - retries}/3). Error: ${errorMsg}`
-            );
-
+            const errorStatus = loadError?.response?.status;
+            const errorDetail = loadError?.response?.data?.detail || loadError?.response?.data?.title || '';
+            
+            // During retries: only log warnings, don't throw errors
             if (retries > 0) {
+              logger.warn(
+                `${logContext} Failed to load distributor account (attempt ${4 - retries}/3). Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}, Detail: ${errorDetail}. Retrying...`
+              );
               const waitTime = (4 - retries) * 1000; // 1s, 2s, 3s
               logger.warn(`${logContext} Retrying in ${waitTime}ms...`);
               await new Promise((resolve) => setTimeout(resolve, waitTime));
+            } else {
+              // Last attempt failed - log error but don't throw yet (will throw after final verification)
+              logger.error(
+                `${logContext} Failed to load distributor account on final attempt (3/3). Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}, Detail: ${errorDetail}`
+              );
             }
           }
         }
 
-        // If all retries failed, throw the last error
+        // Only throw error after ALL retries are exhausted
+        // Don't throw during retries - only throw after final attempt fails
         if (!distributorAccount) {
-          throw lastError || new Error('Failed to load distributor account after retries');
+          // All retries exhausted - now we can throw the error
+          const errorStatus = lastError?.response?.status;
+          const errorDetail = lastError?.response?.data?.detail || lastError?.response?.data?.title || lastError?.message || '';
+          
+          throw new HttpException(
+            {
+              status: 500,
+              success: false,
+              message: 'Distributor account not found on Stellar network',
+              errorCode: 'DISTRIBUTOR_ACCOUNT_NOT_FOUND',
+              retryable: false,
+              details: `Failed to load distributor account (${distributorAddress}) after ${3} retry attempts. Horizon URL: ${horizonUrl}. Error: ${errorDetail}. Please verify: 1) The account exists on the correct network (testnet/mainnet), 2) The STELLAR_HORIZON_URL matches the network where the account was created, 3) There are no network connectivity issues.`,
+            },
+            500
+          );
         }
       } catch (accountError) {
         // Log the actual error and Horizon URL for debugging
