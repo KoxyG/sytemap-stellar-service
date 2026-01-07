@@ -58,13 +58,15 @@ router.get('/get_stellar_wallet', (req, res, next) => {
   // #swagger.tags = ['Stellar']
   // #swagger.operationId = 'get_stellar_wallet'
   // #swagger.description = 'Get wallet details and balances for a Stellar wallet address'
-  // #swagger.parameters['walletAddress'] = {
-  //   in: 'query',
-  //   required: true,
-  //   type: 'string',
-  //   description: 'Stellar wallet address (public key)',
-  //   example: 'GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ'
-  // }
+  /* #swagger.parameters['walletAddress'] = {
+      in: 'query',
+      required: true,
+      schema: {
+        type: 'string'
+      },
+      description: 'Stellar wallet address (public key)',
+      example: 'GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ'
+    } */
   StellarController.getStellarWallet(req, res, next);
 });
 
@@ -72,13 +74,15 @@ router.get('/get_stellar_transaction_history', (req, res, next) => {
   // #swagger.tags = ['Stellar']
   // #swagger.operationId = 'get_stellar_transaction_history'
   // #swagger.description = 'Get all transaction history for a Stellar wallet address'
-  // #swagger.parameters['walletAddress'] = {
-  //   in: 'query',
-  //   required: true,
-  //   type: 'string',
-  //   description: 'Stellar wallet address (public key)',
-  //   example: 'GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ'
-  // }
+  /* #swagger.parameters['walletAddress'] = {
+      in: 'query',
+      required: true,
+      schema: {
+        type: 'string'
+      },
+      description: 'Stellar wallet address (public key)',
+      example: 'GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ'
+    } */
   StellarController.getStellarAllTransactionHistory(req, res, next);
 });
 
