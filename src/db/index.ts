@@ -25,14 +25,14 @@ class Database {
       models: [WalletAccount],
     });
 
-    await this.sequelize
-      .authenticate()
-      .then(() => {
-        console.log('Connection has been established successfully.');
-      })
-      .catch((err) => {
-        console.error('Unable to connect to the Database:', err);
-      });
+    try {
+      await this.sequelize.authenticate();
+      console.log('Connection has been established successfully.');
+    } catch (err) {
+      console.error('Unable to connect to the Database:', err);
+      // Re-throw to allow caller to handle the error
+      throw err;
+    }
   }
 }
 

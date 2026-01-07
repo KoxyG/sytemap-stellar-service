@@ -1580,7 +1580,7 @@ class StellarService {
       .call();
 
     // Extract ALL operation details (not just payments)
-    const allTransactionDetails = await Promise.all(
+    const transactionDetailsArrays = await Promise.all(
       transactions.records.map(async (transaction) => {
         const operations = await transaction.operations();
         return operations.records
@@ -1617,7 +1617,9 @@ class StellarService {
             description: this.getOperationDescription(op.type, walletAddress, op),
           }));
       })
-    ).then((results) => results.flat()); // Flatten the nested arrays
+    );
+    // Flatten the nested arrays - using await ensures sequential execution
+    const allTransactionDetails = transactionDetailsArrays.flat();
 
     return {
       status: 200,
@@ -1744,8 +1746,15 @@ class StellarService {
     UserId: number;
     PlotId: number;
     TransactionHash: string;
+    metadataUrl: string;
   }> {
     const logContext = '[StellarService.sendSytePlotNft]';
+
+    // Validate environment variables are loaded
+    // Log critical env vars for debugging (without exposing secrets)
+    logger.debug(`${logContext} Environment check - STELLAR_HORIZON_URL: ${process.env.STELLAR_HORIZON_URL ? 'SET' : 'NOT SET'}`);
+    logger.debug(`${logContext} Environment check - SYTE_DISTRIBUTOR_ADDRESS: ${process.env.SYTE_DISTRIBUTOR_ADDRESS ? 'SET' : 'NOT SET'}`);
+    logger.debug(`${logContext} Environment check - NODE_ENV: ${process.env.NODE_ENV || 'NOT SET'}`);
 
     // Validate environment variables
     if (!process.env.STELLAR_HORIZON_URL) {
@@ -1884,7 +1893,31 @@ class StellarService {
     }
 
     // Initialize Stellar Horizon server connection
-    const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
+    const horizonUrl = process.env.STELLAR_HORIZON_URL;
+    if (!horizonUrl) {
+      logger.error(`${logContext} STELLAR_HORIZON_URL is not set in environment variables`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'STELLAR_HORIZON_URL not configured',
+          errorCode: 'CONFIG_MISSING_HORIZON_URL',
+          retryable: false,
+          details: 'STELLAR_HORIZON_URL environment variable is not set. Please check your .env file or deployment environment variables.',
+        },
+        500
+      );
+    }
+    
+    const server = new Horizon.Server(horizonUrl);
+    logger.debug(`${logContext} Created Horizon server with URL: ${server.serverURL}`);
+    
+    // Verify the server URL matches what we expect
+    if (server.serverURL !== horizonUrl) {
+      logger.warn(
+        `${logContext} Horizon server URL mismatch! Expected: ${horizonUrl}, Actual: ${server.serverURL}`
+      );
+    }
 
     // Get sponsor public key for fee sponsorship operations
     const sponsorPubKey = process.env.SPONSOR_PUBLIC_KEY;
@@ -2171,7 +2204,7 @@ class StellarService {
 
         if (
           accountError instanceof Error &&
-          (accountError.message.includes('404') || accountError.message.includes('Not Found'))
+          (accountError.message.includes('Not Found'))
         ) {
           logger.error(
             `${logContext} Distributor account does not exist on Stellar network: ${process.env.SYTE_DISTRIBUTOR_ADDRESS}`
@@ -2225,11 +2258,19 @@ class StellarService {
       const result = await server.submitTransaction(feeBumpTransaction);
       logger.info(`${logContext} SYTEPLOT NFT sent successfully. Hash: ${result.hash}`);
 
+      // Determine network for Stellar Expert URL
+      const isTestnet = this.params.networkPassphrase === Networks.TESTNET;
+      const explorerBaseUrl = isTestnet
+        ? 'https://stellar.expert/explorer/testnet'
+        : 'https://stellar.expert/explorer/public';
+      const metadataUrl = `${explorerBaseUrl}/tx/${result.hash}`;
+
       // Return transaction details for tracking and verification
       return {
         UserId: UserId,
         PlotId: PlotId,
         TransactionHash: result.hash, // Stellar transaction hash for blockchain verification
+        metadataUrl: metadataUrl, // URL to view transaction on Stellar Expert explorer
       };
     } catch (error) {
       /**

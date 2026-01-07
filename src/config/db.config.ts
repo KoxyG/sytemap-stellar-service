@@ -1,5 +1,15 @@
+import path from 'path';
 import dotenv from 'dotenv';
-dotenv.config();
+
+// Load environment variables from project root
+// This ensures .env is found whether running from src/ or dist/
+const envPath = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: envPath });
+
+// Also try loading from current directory as fallback (for development)
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config(); // This will override with .env in current directory if it exists
+}
 
 export const config = {
   HOST: process.env.DB_HOST || 'localhost',

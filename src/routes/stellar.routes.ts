@@ -148,6 +148,28 @@ router.post('/send_syteplot_nft', (req, res, next) => {
         }
       }
     } */
+  /* #swagger.responses[200] = {
+      description: 'SYTEPLOT NFT sent successfully',
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              success: { type: "boolean", example: true },
+              data: {
+                type: "object",
+                properties: {
+                  UserId: { type: "integer", example: 1 },
+                  PlotId: { type: "integer", example: 1 },
+                  TransactionHash: { type: "string", example: "8584e10abb99159e9bf86d1718599fae4ac3a73332aa7b6d02a43bcff09c4812" },
+                  metadataUrl: { type: "string", example: "https://stellar.expert/explorer/testnet/tx/8584e10abb99159e9bf86d1718599fae4ac3a73332aa7b6d02a43bcff09c4812" }
+                }
+              }
+            }
+          }
+        }
+      }
+    } */
   StellarController.sendSytePlotNft(req, res, next);
 });
 

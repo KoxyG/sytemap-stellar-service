@@ -3,7 +3,8 @@ import swaggerUi from 'swagger-ui-express';
 
 import swaggerDocument from '../swagger/documentation.swagger.json';
 
-let count = 0;
+// Note: Removed global 'count' variable to prevent race conditions between concurrent requests
+// Each request handler uses local state to avoid data leakage
 const defaultRoutes = Router();
 // simple endpoint
 defaultRoutes.get('/welcome', (req: Request, res: Response) => {
@@ -16,8 +17,7 @@ defaultRoutes.get('/welcome', (req: Request, res: Response) => {
                   message: "Welcome to Sytemap Blockchain Backend Service"
               }
       } */
-  process.stdout.write(`Requests: ${count + 1}\r`);
-  count++;
+  // Using local state per request - no shared global state
   return res.status(200).json({ success: true, message: 'Welcome to Sytemap Blockchain Backend Service' });
 });
 
@@ -27,21 +27,18 @@ defaultRoutes.get('/benchmark', (req, res) => {
   if (typeof _requests === 'string')
     // Simulate a high-load response
     requests = parseInt(_requests, 10);
+  // Using local state per request - no shared global state
   let completed = 0;
 
   // Function to simulate high-load
   const simulateLoad = () => {
     if (completed >= requests) {
       res.send('Benchmark test complete!');
-      if (process.send) process.send({ type: 'requestCount', count: count });
       return;
     }
     completed += 1;
     setImmediate(simulateLoad);
   };
-
-  process.stdout.write(`Requests: ${count + 1}\r`);
-  count++;
 
   simulateLoad();
 });

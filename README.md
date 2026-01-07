@@ -19,6 +19,7 @@ A production-ready Node.js/TypeScript backend service for interacting with the S
 ## ✨ Features
 
 ### Core Functionality
+
 - ✅ **Account Management**: Create Stellar accounts with automatic trustline setup
 - ✅ **SYTE Token Distribution**: Send SYTE tokens to wallet addresses
 - ✅ **SYTEPLOT NFT Distribution**: Automated NFT transfer with trustline management
@@ -27,6 +28,7 @@ A production-ready Node.js/TypeScript backend service for interacting with the S
 - ✅ **Fee Sponsorship**: Automatic fee-bumping for seamless transactions
 
 ### Technical Features
+
 - 🔒 **Encryption**: AES-256 encryption for secret keys
 - 📝 **TypeScript**: Full type safety and IntelliSense support
 - 📚 **Swagger Documentation**: Auto-generated API documentation
@@ -45,12 +47,14 @@ A production-ready Node.js/TypeScript backend service for interacting with the S
 ## 🚀 Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone <repository-url>
    cd SyteMap-Stellar-Service
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    # or
@@ -58,22 +62,26 @@ A production-ready Node.js/TypeScript backend service for interacting with the S
    ```
 
 3. **Set up environment variables**
+
    ```bash
    cp .env.example .env
    # Edit .env with your configuration
    ```
 
 4. **Generate encryption key** (if not already set)
+
    ```bash
    npm run generate:key
    ```
 
 5. **Build the project**
+
    ```bash
    npm run build
    ```
 
 6. **Start the server**
+
    ```bash
    # Development mode
    npm run dev
@@ -134,6 +142,7 @@ ENCRYPTION_KEY=your-32-byte-encryption-key
 ## 📡 API Endpoints
 
 ### Base URL
+
 ```
 http://localhost:3000/api/v1
 ```
@@ -141,6 +150,7 @@ http://localhost:3000/api/v1
 ### Endpoints
 
 #### 1. Create Stellar Account
+
 ```http
 POST /create_stellar_account
 ```
@@ -148,6 +158,7 @@ POST /create_stellar_account
 Creates a new Stellar account with automatic trustline setup.
 
 **Request Body:**
+
 ```json
 {
   "UserId": 1,
@@ -160,6 +171,7 @@ Creates a new Stellar account with automatic trustline setup.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -177,6 +189,7 @@ Creates a new Stellar account with automatic trustline setup.
 ```
 
 #### 2. Send SYTE Tokens
+
 ```http
 POST /send_syte_tokens
 ```
@@ -184,6 +197,7 @@ POST /send_syte_tokens
 Sends SYTE tokens to a wallet address.
 
 **Request Body:**
+
 ```json
 {
   "UserId": 1,
@@ -194,6 +208,7 @@ Sends SYTE tokens to a wallet address.
 ```
 
 #### 3. Send SYTEPLOT NFT
+
 ```http
 POST /send_syteplot_nft
 ```
@@ -201,6 +216,7 @@ POST /send_syteplot_nft
 Sends a SYTEPLOT NFT to a wallet. Automatically handles trustline creation.
 
 **Request Body:**
+
 ```json
 {
   "UserId": 1,
@@ -222,6 +238,7 @@ Sends a SYTEPLOT NFT to a wallet. Automatically handles trustline creation.
 ```
 
 #### 4. Get Stellar Wallet
+
 ```http
 GET /get_stellar_wallet?walletAddress=G...
 ```
@@ -229,6 +246,7 @@ GET /get_stellar_wallet?walletAddress=G...
 Retrieves wallet details and balances.
 
 #### 5. Get Transaction History
+
 ```http
 GET /get_stellar_transaction_history?walletAddress=G...
 ```
@@ -236,6 +254,7 @@ GET /get_stellar_transaction_history?walletAddress=G...
 Retrieves all transaction history for a wallet.
 
 #### 6. Activate SYTE Token Trustline
+
 ```http
 POST /activate_syte_token_trustline
 ```
@@ -243,6 +262,7 @@ POST /activate_syte_token_trustline
 Activates SYTE token trustline for an existing account.
 
 **Request Body:**
+
 ```json
 {
   "WalletAddress": "GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ",
@@ -253,6 +273,7 @@ Activates SYTE token trustline for an existing account.
 ### Swagger Documentation
 
 Interactive API documentation is available at:
+
 ```
 http://localhost:3000/api-docs
 ```
@@ -262,11 +283,13 @@ http://localhost:3000/api-docs
 ### Utility Scripts
 
 #### Generate Encryption Key
+
 ```bash
 npm run generate:key
 ```
 
 #### Create and Encrypt Account
+
 ```bash
 npm run create:account
 ```
@@ -276,6 +299,7 @@ npm run create:account
 See [SYTE TOKEN README](scripts/SYTE%20TOKEN/README.md) for complete documentation.
 
 **Quick Start:**
+
 ```bash
 # 1. Fund account
 ts-node scripts/fund-testnet-accounts.ts <accountPublicKey>
@@ -292,6 +316,7 @@ ts-node scripts/SYTE\ TOKEN/send-payment.ts SYTE <destinationAccount> <issuerSec
 See [SYTEPLOT NFT README](scripts/SYTEPLOT%20NFT/README.md) for complete documentation.
 
 **Quick Start:**
+
 ```bash
 # 1. Set home domain
 ts-node scripts/SYTEPLOT\ NFT/set-home-domain.ts <issuerSecretKey> testnet
@@ -354,6 +379,7 @@ npm run swagger          # Generate Swagger documentation
 ### Development Workflow
 
 1. **Create a feature branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -361,12 +387,14 @@ npm run swagger          # Generate Swagger documentation
 2. **Make your changes**
 
 3. **Run linter and formatter**
+
    ```bash
    npm run lint:fix
    npm run format
    ```
 
 4. **Run tests**
+
    ```bash
    npm test
    ```
@@ -382,16 +410,19 @@ npm run swagger          # Generate Swagger documentation
 ### Best Practices
 
 1. **Never log secret keys**
+
    - All secret keys are encrypted before storage
    - No secret keys are logged in console or files
    - Only public keys and encrypted values are logged
 
 2. **Environment Variables**
+
    - Never commit `.env` files
    - Use strong encryption keys (32 bytes minimum)
    - Rotate keys regularly in production
 
 3. **API Security**
+
    - Rate limiting is enabled
    - CORS is configured
    - Helmet.js provides security headers
@@ -456,6 +487,7 @@ For issues, questions, or contributions, please open an issue on GitHub.
 ---
 
 **⚠️ Important**: This service handles sensitive cryptographic operations. Always:
+
 - Test thoroughly on testnet before mainnet deployment
 - Keep secret keys secure and encrypted
 - Never commit secrets to version control
