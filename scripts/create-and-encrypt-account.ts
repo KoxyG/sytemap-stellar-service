@@ -97,14 +97,12 @@ async function createAndEncryptAccount() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('\n📋 Account Details:\n');
     console.log(`WalletAddress: ${publicKey}`);
-    console.log(`EncryptedSecretKey: ${encryptedSecretKey}`);
     console.log(`TransactionHash: ${transactionHash}`);
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     console.log('⚠️  IMPORTANT SECURITY NOTES:');
     console.log('   1. Store the encrypted secret key securely');
-    console.log('   2. The plain secret key is: ' + secretKey);
-    console.log('   3. Keep the mnemonic phrase safe for recovery');
-    console.log('   4. Never commit secret keys to version control');
+    console.log('   2. Keep the mnemonic phrase safe for recovery');
+    console.log('   3. Never commit secret keys to version control or log them to the console');
     console.log('\n');
 
     // Return only wallet address and encrypted key as JSON
