@@ -219,12 +219,9 @@
           {
             "name": "walletAddress",
             "in": "query",
-            "required": true,
             "schema": {
               "type": "string"
-            },
-            "description": "Stellar wallet address (public key)",
-            "example": "GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ"
+            }
           }
         ],
         "responses": {
@@ -245,12 +242,9 @@
           {
             "name": "walletAddress",
             "in": "query",
-            "required": true,
             "schema": {
               "type": "string"
-            },
-            "description": "Stellar wallet address (public key)",
-            "example": "GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ"
+            }
           }
         ],
         "responses": {

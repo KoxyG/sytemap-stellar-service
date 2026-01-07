@@ -2192,41 +2192,6 @@ class StellarService {
           );
         }
 
-        // First, verify the account exists by making a direct HTTP request using the SDK's accounts endpoint
-        // This helps diagnose if the issue is with loadAccount() or the account itself
-        try {
-          logger.debug(`${logContext} Verifying account exists using accounts().accountId() endpoint`);
-          const accountInfo = await server.accounts().accountId(distributorAddress).call();
-          logger.debug(`${logContext} Account verification successful. Account ID: ${accountInfo.account_id}`);
-        } catch (verifyError: any) {
-          // If verification fails with 404, the account definitely doesn't exist
-          if (
-            verifyError?.response?.status === 404 ||
-            verifyError?.message?.includes('404') ||
-            verifyError?.message?.includes('Not Found')
-          ) {
-            logger.error(
-              `${logContext} Account verification failed: Account does not exist on network. Response: ${JSON.stringify(verifyError?.response?.data || verifyError?.message)}`
-            );
-            throw new HttpException(
-              {
-                status: 500,
-                success: false,
-                message: 'Distributor account not found on Stellar network',
-                errorCode: 'DISTRIBUTOR_ACCOUNT_NOT_FOUND',
-                retryable: false,
-                details: `The distributor account (${distributorAddress}) does not exist on the Stellar network at ${horizonUrl}. Direct verification via accounts endpoint returned 404. Please ensure the account has been created and funded on the correct network (testnet/mainnet).`,
-              },
-              500
-            );
-          } else {
-            // Other errors (network issues, etc.) - log but continue with loadAccount attempt
-            logger.warn(
-              `${logContext} Account verification had issues (non-404): ${verifyError?.message || verifyError}. Proceeding with loadAccount() attempt...`
-            );
-          }
-        }
-
         // Try to load the account with retry logic
         let retries = 3;
         let lastError: any = null;
@@ -2252,7 +2217,7 @@ class StellarService {
             const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
             const errorStatus = loadError?.response?.status;
             const errorDetail = loadError?.response?.data?.detail || loadError?.response?.data?.title || '';
-            
+
             // During retries: only log warnings, don't throw errors
             if (retries > 0) {
               logger.warn(
@@ -2275,8 +2240,9 @@ class StellarService {
         if (!distributorAccount) {
           // All retries exhausted - now we can throw the error
           const errorStatus = lastError?.response?.status;
-          const errorDetail = lastError?.response?.data?.detail || lastError?.response?.data?.title || lastError?.message || '';
-          
+          const errorDetail =
+            lastError?.response?.data?.detail || lastError?.response?.data?.title || lastError?.message || '';
+
           throw new HttpException(
             {
               status: 500,
