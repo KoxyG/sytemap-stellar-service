@@ -6,6 +6,42 @@ import swaggerDocument from '../swagger/documentation.swagger.json';
 // Note: Removed global 'count' variable to prevent race conditions between concurrent requests
 // Each request handler uses local state to avoid data leakage
 const defaultRoutes = Router();
+
+// Root endpoint - handles health checks and provides API information
+defaultRoutes.get('/', (req: Request, res: Response) => {
+  // #swagger.tags = ['Health']
+  // #swagger.summary = "API Health Check and Information"
+  /*  #swagger.responses[200] = {
+              description: 'API is running',
+              schema: {
+                  success: true,
+                  message: "SyteMap Stellar Service API",
+                  version: "1.0.0",
+                  endpoints: {
+                    api: "/api/v1",
+                    docs: "/api/v1/api-docs",
+                    welcome: "/api/v1/welcome"
+                  }
+              }
+      } */
+  return res.status(200).json({
+    success: true,
+    message: 'SyteMap Stellar Service API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      api: '/api/v1',
+      docs: '/api/v1/api-docs',
+      welcome: '/api/v1/welcome',
+    },
+  });
+});
+
+// Handle HEAD requests for health checks (Render, load balancers, etc.)
+defaultRoutes.head('/', (req: Request, res: Response) => {
+  res.status(200).end();
+});
+
 // simple endpoint
 defaultRoutes.get('/welcome', (req: Request, res: Response) => {
   // #swagger.tags = ['Welcome']
