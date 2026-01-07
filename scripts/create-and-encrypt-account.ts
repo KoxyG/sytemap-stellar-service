@@ -121,7 +121,7 @@ async function createAndEncryptAccount() {
     return resultData;
   } catch (error) {
     console.error('\n❌ Error creating account:', error instanceof Error ? error.message : error);
-    
+
     if (error instanceof Error) {
       if (error.message.includes('op_underfunded')) {
         console.error('   Reason: Sponsor account has insufficient funds');
@@ -135,11 +135,10 @@ async function createAndEncryptAccount() {
         console.error('   Reason: Network error - unable to connect to Stellar network');
       }
     }
-    
+
     process.exit(1);
   }
 }
 
 // Run the script
 createAndEncryptAccount();
-

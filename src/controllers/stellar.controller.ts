@@ -126,11 +126,11 @@ class StellarController {
   /**
    * POST
    * Admin function to activate SYTE token trustline for a wallet address.
-   * 
+   *
    * IMPORTANT: Only use this function if you are certain that:
    * - The account already exists on the Stellar network (on-chain)
    * - The account only lacks the SYTE token trustline activation
-   * 
+   *
    * This function will fail if the account does not exist on-chain.
    */
   async activateSyteTokenTrustline(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -141,6 +141,45 @@ class StellarController {
       };
 
       const result = await stellarService.activateSyteTokenTrustline(WalletAddress, EncryptedSecretKey);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST
+   * Send SYTEPLOT NFT to a specified wallet address.
+   * This function will add the trustline (if needed) and send the NFT in one operation.
+   * 
+   * Note: The wallet address and encrypted secret key are extracted from the Metadata object
+   * (buyer_wallet_id and buyer_wallet_secret fields).
+   */
+  async sendSytePlotNft(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { UserId, PlotId, Metadata } = req.body as {
+        UserId: number;
+        PlotId: number;
+        Metadata: {
+          plot_no: number;
+          estate_name: string;
+          size_of_plot: number;
+          plot_url: string;
+          price_of_plot: number;
+          date_of_allocation: string;
+          coordinate_of_plot: string;
+          buyer_wallet_id: string;
+          buyer_wallet_secret: string;
+          estate_company_name: string;
+          property_verification_no: number;
+        };
+      };
+
+      const result = await stellarService.sendSytePlotNft(UserId, PlotId, Metadata);
 
       res.status(200).json({
         success: true,

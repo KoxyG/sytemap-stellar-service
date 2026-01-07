@@ -293,6 +293,101 @@
           }
         }
       }
+    },
+    "/send_syteplot_nft": {
+      "post": {
+        "tags": [
+          "Stellar"
+        ],
+        "description": "Send SYTEPLOT NFT to a specified wallet address. This function will automatically add the trustline (if needed) and send the NFT (0.0000001 tokens) in one operation. The wallet address and encrypted secret key are provided in the Metadata object (buyer_wallet_id and buyer_wallet_secret).",
+        "operationId": "send_syteplot_nft",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "UserId",
+                  "PlotId",
+                  "Metadata"
+                ],
+                "properties": {
+                  "UserId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "PlotId": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
+                  },
+                  "Metadata": {
+                    "type": "object",
+                    "required": [
+                      "buyer_wallet_id",
+                      "buyer_wallet_secret"
+                    ],
+                    "properties": {
+                      "plot_no": {
+                        "type": "integer",
+                        "example": 123
+                      },
+                      "estate_name": {
+                        "type": "string",
+                        "example": "Sunset Estate"
+                      },
+                      "size_of_plot": {
+                        "type": "number",
+                        "example": 500.5
+                      },
+                      "plot_url": {
+                        "type": "string",
+                        "example": "https://example.com/plot/123"
+                      },
+                      "price_of_plot": {
+                        "type": "number",
+                        "example": 100000
+                      },
+                      "date_of_allocation": {
+                        "type": "string",
+                        "format": "date",
+                        "example": "2024-01-15"
+                      },
+                      "coordinate_of_plot": {
+                        "type": "string",
+                        "example": "40.7128,-74.0060"
+                      },
+                      "buyer_wallet_id": {
+                        "type": "string",
+                        "example": "GBMYWRUGENOVBAZUN2HAOHOREMPNKQBVSLIBEBTLIBSL4Y4JTWPALGHQ"
+                      },
+                      "buyer_wallet_secret": {
+                        "type": "string",
+                        "example": "encrypted-secret-key-here"
+                      },
+                      "estate_company_name": {
+                        "type": "string",
+                        "example": "ABC Real Estate"
+                      },
+                      "property_verification_no": {
+                        "type": "integer",
+                        "example": 12345
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

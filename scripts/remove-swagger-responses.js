@@ -11,17 +11,17 @@ function removeResponses(obj) {
   if (typeof obj !== 'object' || obj === null) {
     return;
   }
-  
+
   if (Array.isArray(obj)) {
-    obj.forEach(item => removeResponses(item));
+    obj.forEach((item) => removeResponses(item));
   } else {
     // Delete 'responses' key if it exists
     if ('responses' in obj) {
       delete obj.responses;
     }
-    
+
     // Recursively process all values
-    Object.values(obj).forEach(value => {
+    Object.values(obj).forEach((value) => {
       removeResponses(value);
     });
   }
@@ -34,4 +34,3 @@ removeResponses(swaggerDoc);
 fs.writeFileSync(swaggerFile, JSON.stringify(swaggerDoc, null, 2), 'utf8');
 
 console.log('✅ Successfully removed all responses from swagger.json');
-
