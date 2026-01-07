@@ -1752,8 +1752,12 @@ class StellarService {
 
     // Validate environment variables are loaded
     // Log critical env vars for debugging (without exposing secrets)
-    logger.debug(`${logContext} Environment check - STELLAR_HORIZON_URL: ${process.env.STELLAR_HORIZON_URL ? 'SET' : 'NOT SET'}`);
-    logger.debug(`${logContext} Environment check - SYTE_DISTRIBUTOR_ADDRESS: ${process.env.SYTE_DISTRIBUTOR_ADDRESS ? 'SET' : 'NOT SET'}`);
+    logger.debug(
+      `${logContext} Environment check - STELLAR_HORIZON_URL: ${process.env.STELLAR_HORIZON_URL ? 'SET' : 'NOT SET'}`
+    );
+    logger.debug(
+      `${logContext} Environment check - SYTE_DISTRIBUTOR_ADDRESS: ${process.env.SYTE_DISTRIBUTOR_ADDRESS ? 'SET' : 'NOT SET'}`
+    );
     logger.debug(`${logContext} Environment check - NODE_ENV: ${process.env.NODE_ENV || 'NOT SET'}`);
 
     // Validate environment variables
@@ -1903,20 +1907,19 @@ class StellarService {
           message: 'STELLAR_HORIZON_URL not configured',
           errorCode: 'CONFIG_MISSING_HORIZON_URL',
           retryable: false,
-          details: 'STELLAR_HORIZON_URL environment variable is not set. Please check your .env file or deployment environment variables.',
+          details:
+            'STELLAR_HORIZON_URL environment variable is not set. Please check your .env file or deployment environment variables.',
         },
         500
       );
     }
-    
+
     const server = new Horizon.Server(horizonUrl);
     logger.debug(`${logContext} Created Horizon server with URL: ${server.serverURL}`);
-    
+
     // Verify the server URL matches what we expect
     if (server.serverURL !== horizonUrl) {
-      logger.warn(
-        `${logContext} Horizon server URL mismatch! Expected: ${horizonUrl}, Actual: ${server.serverURL}`
-      );
+      logger.warn(`${logContext} Horizon server URL mismatch! Expected: ${horizonUrl}, Actual: ${server.serverURL}`);
     }
 
     // Get sponsor public key for fee sponsorship operations
@@ -2171,7 +2174,9 @@ class StellarService {
 
         logger.debug(`${logContext} Attempting to load distributor account: ${distributorAddress}`);
         logger.debug(`${logContext} Using Horizon URL: ${horizonUrl}`);
-        logger.debug(`${logContext} Server URL: ${server.serverURL}`);
+        // server.serverURL might be a URI object, convert to string for logging
+        const serverUrlString = typeof server.serverURL === 'string' ? server.serverURL : String(server.serverURL);
+        logger.debug(`${logContext} Server URL: ${serverUrlString}`);
 
         if (!distributorAddress) {
           throw new HttpException(
@@ -2187,10 +2192,74 @@ class StellarService {
           );
         }
 
-        distributorAccount = await server.loadAccount(distributorAddress);
-        logger.debug(
-          `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
-        );
+        // First, verify the account exists by making a direct HTTP request using the SDK's accounts endpoint
+        // This helps diagnose if the issue is with loadAccount() or the account itself
+        try {
+          logger.debug(`${logContext} Verifying account exists using accounts().accountId() endpoint`);
+          const accountInfo = await server.accounts().accountId(distributorAddress).call();
+          logger.debug(`${logContext} Account verification successful. Account ID: ${accountInfo.account_id}`);
+        } catch (verifyError: any) {
+          // If verification fails with 404, the account definitely doesn't exist
+          if (verifyError?.response?.status === 404 || verifyError?.message?.includes('404') || verifyError?.message?.includes('Not Found')) {
+            logger.error(
+              `${logContext} Account verification failed: Account does not exist on network. Response: ${JSON.stringify(verifyError?.response?.data || verifyError?.message)}`
+            );
+            throw new HttpException(
+              {
+                status: 500,
+                success: false,
+                message: 'Distributor account not found on Stellar network',
+                errorCode: 'DISTRIBUTOR_ACCOUNT_NOT_FOUND',
+                retryable: false,
+                details: `The distributor account (${distributorAddress}) does not exist on the Stellar network at ${horizonUrl}. Direct verification via accounts endpoint returned 404. Please ensure the account has been created and funded on the correct network (testnet/mainnet).`,
+              },
+              500
+            );
+          } else {
+            // Other errors (network issues, etc.) - log but continue with loadAccount attempt
+            logger.warn(
+              `${logContext} Account verification had issues (non-404): ${verifyError?.message || verifyError}. Proceeding with loadAccount() attempt...`
+            );
+          }
+        }
+
+        // Try to load the account with retry logic
+        let retries = 3;
+        let lastError: any = null;
+        
+        while (retries > 0) {
+          try {
+            // Always create a fresh server instance to avoid any state issues
+            const freshServer = new Horizon.Server(horizonUrl);
+            logger.debug(`${logContext} Attempting to load account (attempt ${4 - retries}/3) with server URL: ${freshServer.serverURL}`);
+            
+            distributorAccount = await freshServer.loadAccount(distributorAddress);
+            
+            logger.debug(
+              `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
+            );
+            break; // Success, exit retry loop
+          } catch (loadError) {
+            lastError = loadError;
+            retries--;
+            
+            const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
+            logger.warn(
+              `${logContext} Failed to load distributor account (attempt ${4 - retries}/3). Error: ${errorMsg}`
+            );
+            
+            if (retries > 0) {
+              const waitTime = (4 - retries) * 1000; // 1s, 2s, 3s
+              logger.warn(`${logContext} Retrying in ${waitTime}ms...`);
+              await new Promise((resolve) => setTimeout(resolve, waitTime));
+            }
+          }
+        }
+        
+        // If all retries failed, throw the last error
+        if (!distributorAccount) {
+          throw lastError || new Error('Failed to load distributor account after retries');
+        }
       } catch (accountError) {
         // Log the actual error and Horizon URL for debugging
         const horizonUrl = process.env.STELLAR_HORIZON_URL || 'not set';
@@ -2202,10 +2271,7 @@ class StellarService {
           `${logContext} Failed to load distributor account. Address: ${distributorAddress}, Horizon URL: ${horizonUrl}, Server URL: ${server.serverURL}, Error: ${errorMessage}, Full Error: ${errorString.substring(0, 500)}`
         );
 
-        if (
-          accountError instanceof Error &&
-          (accountError.message.includes('Not Found'))
-        ) {
+        if (accountError instanceof Error && accountError.message.includes('Not Found')) {
           logger.error(
             `${logContext} Distributor account does not exist on Stellar network: ${process.env.SYTE_DISTRIBUTOR_ADDRESS}`
           );

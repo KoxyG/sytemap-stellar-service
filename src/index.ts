@@ -11,12 +11,7 @@ import logger from './utils/logger.utils';
  * This helps catch configuration issues early
  */
 function validateEnvironmentVariables(): void {
-  const requiredVars = [
-    'STELLAR_HORIZON_URL',
-    'SYTE_DISTRIBUTOR_ADDRESS',
-    'SPONSOR_PUBLIC_KEY',
-    'SPONSOR_PRIVATE_KEY',
-  ];
+  const requiredVars = ['STELLAR_HORIZON_URL', 'SYTE_DISTRIBUTOR_ADDRESS', 'SPONSOR_PUBLIC_KEY', 'SPONSOR_PRIVATE_KEY'];
 
   const missing: string[] = [];
   const present: string[] = [];
@@ -32,11 +27,15 @@ function validateEnvironmentVariables(): void {
   if (missing.length > 0) {
     logger.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
     logger.error(`✅ Present environment variables: ${present.join(', ')}`);
-    logger.error('Please ensure all required environment variables are set in your .env file or deployment environment.');
+    logger.error(
+      'Please ensure all required environment variables are set in your .env file or deployment environment.'
+    );
   } else {
     logger.info(`✅ All critical environment variables are loaded`);
     logger.debug(`Environment check - STELLAR_HORIZON_URL: ${process.env.STELLAR_HORIZON_URL}`);
-    logger.debug(`Environment check - SYTE_DISTRIBUTOR_ADDRESS: ${process.env.SYTE_DISTRIBUTOR_ADDRESS ? 'SET' : 'NOT SET'}`);
+    logger.debug(
+      `Environment check - SYTE_DISTRIBUTOR_ADDRESS: ${process.env.SYTE_DISTRIBUTOR_ADDRESS ? 'SET' : 'NOT SET'}`
+    );
   }
 }
 
