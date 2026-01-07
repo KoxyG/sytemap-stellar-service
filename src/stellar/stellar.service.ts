@@ -2200,7 +2200,11 @@ class StellarService {
           logger.debug(`${logContext} Account verification successful. Account ID: ${accountInfo.account_id}`);
         } catch (verifyError: any) {
           // If verification fails with 404, the account definitely doesn't exist
-          if (verifyError?.response?.status === 404 || verifyError?.message?.includes('404') || verifyError?.message?.includes('Not Found')) {
+          if (
+            verifyError?.response?.status === 404 ||
+            verifyError?.message?.includes('404') ||
+            verifyError?.message?.includes('Not Found')
+          ) {
             logger.error(
               `${logContext} Account verification failed: Account does not exist on network. Response: ${JSON.stringify(verifyError?.response?.data || verifyError?.message)}`
             );
@@ -2226,15 +2230,17 @@ class StellarService {
         // Try to load the account with retry logic
         let retries = 3;
         let lastError: any = null;
-        
+
         while (retries > 0) {
           try {
             // Always create a fresh server instance to avoid any state issues
             const freshServer = new Horizon.Server(horizonUrl);
-            logger.debug(`${logContext} Attempting to load account (attempt ${4 - retries}/3) with server URL: ${freshServer.serverURL}`);
-            
+            logger.debug(
+              `${logContext} Attempting to load account (attempt ${4 - retries}/3) with server URL: ${freshServer.serverURL}`
+            );
+
             distributorAccount = await freshServer.loadAccount(distributorAddress);
-            
+
             logger.debug(
               `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
             );
@@ -2242,12 +2248,12 @@ class StellarService {
           } catch (loadError) {
             lastError = loadError;
             retries--;
-            
+
             const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
             logger.warn(
               `${logContext} Failed to load distributor account (attempt ${4 - retries}/3). Error: ${errorMsg}`
             );
-            
+
             if (retries > 0) {
               const waitTime = (4 - retries) * 1000; // 1s, 2s, 3s
               logger.warn(`${logContext} Retrying in ${waitTime}ms...`);
@@ -2255,7 +2261,7 @@ class StellarService {
             }
           }
         }
-        
+
         // If all retries failed, throw the last error
         if (!distributorAccount) {
           throw lastError || new Error('Failed to load distributor account after retries');
