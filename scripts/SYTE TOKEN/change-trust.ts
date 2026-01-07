@@ -14,7 +14,16 @@
  */
 
 import 'dotenv/config';
-import { Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder, StrKey, Asset } from '@stellar/stellar-sdk';
+import {
+  Keypair,
+  Horizon,
+  BASE_FEE,
+  Networks,
+  Operation,
+  TransactionBuilder,
+  StrKey,
+  Asset,
+} from '@stellar/stellar-sdk';
 
 // Hardcoded issuer address
 const ISSUER_ADDRESS = 'GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC';
@@ -87,9 +96,7 @@ async function changeTrust(
     }
 
     // Set horizon URL and network passphrase based on network
-    const horizonUrl = network === 'testnet' 
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org';
+    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
     const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
 
     // Validate asset code (Stellar asset codes are 1-12 characters, alphanumeric)
@@ -103,7 +110,7 @@ async function changeTrust(
         error: `Invalid asset code length. Must be 1-12 characters, got ${trimmedAssetCode.length}`,
       };
     }
-    
+
     // Validate asset code contains only alphanumeric characters
     if (!/^[A-Z0-9]+$/i.test(trimmedAssetCode)) {
       return {
@@ -189,7 +196,7 @@ async function changeTrust(
       // Keep the original string format to preserve precision
       // Validate it's a valid number format (but don't convert to number to avoid precision loss)
       const trimmedLimit = limit.trim();
-      
+
       // Validate format: must be a positive number with up to 7 decimal places
       // Pattern: one or more digits, optionally followed by a dot and 1-7 decimal digits
       if (!/^\d+(\.\d{1,7})?$/.test(trimmedLimit)) {
@@ -201,7 +208,7 @@ async function changeTrust(
           error: `Invalid trust limit format: ${trimmedLimit}. Must be a positive number with up to 7 decimal places.`,
         };
       }
-      
+
       // Validate it's a positive number (not zero or negative)
       const limitNum = parseFloat(trimmedLimit);
       if (isNaN(limitNum) || limitNum <= 0) {
@@ -213,20 +220,20 @@ async function changeTrust(
           error: `Invalid trust limit: ${trimmedLimit}. Must be a positive number greater than zero.`,
         };
       }
-      
+
       trustLimit = trimmedLimit;
     } else {
       // Use max limit - Stellar's maximum trustline limit
       // Format: max int64 (9223372036854775807) divided by 10^7 = 922337203685.4775807
       trustLimit = '922337203685.4775807';
     }
-    
+
     // Build transaction
     // Note: Don't specify 'source' when it's the same as the transaction source account
     console.log(`   Building transaction for account: ${accountPublicKey}`);
     console.log(`   Asset: ${asset.getCode()} from ${asset.getIssuer()}`);
     console.log(`   Limit: ${trustLimit}`);
-    
+
     const transaction = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: networkPassphrase,
@@ -314,12 +321,12 @@ function parseArguments(): {
   const assetCode = args[0];
   const secretKey = args[1];
   const networkArg = args[2].toLowerCase();
-  
+
   if (networkArg !== 'testnet' && networkArg !== 'mainnet') {
     console.error(`❌ Error: Invalid network "${networkArg}". Must be "testnet" or "mainnet"`);
     process.exit(1);
   }
-  
+
   const network = networkArg as 'testnet' | 'mainnet';
   let limit: string | undefined;
 
@@ -346,7 +353,9 @@ async function main() {
 
     console.log(`📋 Configuration:`);
     console.log(`   Network: ${network}`);
-    console.log(`   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`);
+    console.log(
+      `   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`
+    );
     console.log(`   Issuer Address: ${ISSUER_ADDRESS}`);
     console.log(`   Asset Code: ${assetCode}`);
     console.log(`   Trust Limit: ${limit || '922337203685.4775807 (max)'}`);
@@ -396,4 +405,3 @@ async function main() {
 
 // Run the script
 main();
-

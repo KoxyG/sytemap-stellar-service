@@ -7,10 +7,12 @@ This directory contains utility scripts for managing SYTEPLOT NFT operations on 
 This section documents the complete workflow for distributing SYTEPLOT NFTs to accounts. The process consists of multiple steps:
 
 ### Issuer Setup (One-time, per network)
+
 1. **Set Home Domain** - Set the home domain for the issuer account (optional but recommended)
 2. **Set Authorization Flags** - Enable revocable and clawback features for the asset
 
 ### NFT Distribution Workflow
+
 1. **Fund Accounts** - Fund accounts with XLM (required for transaction fees)
 2. **Change Trust** - Add trustline for SYTEPLOT asset (required to receive SYTEPLOT NFTs)
 3. **Send Payment** - Send 1 SYTEPLOT NFT (0.0000001 tokens) to the destination account
@@ -81,7 +83,8 @@ ts-node scripts/SYTEPLOT\ NFT/set-authorization-flags.ts <issuerSecretKey> mainn
 **Note**: The `fund-testnet-accounts.ts` script only works on testnet. For mainnet, you'll need to fund accounts manually or use a different method.
 
 #### Step 3: Add Trustline for SYTEPLOT Asset
-```bash
+
+````bash
 # Add trustline for SYTEPLOT asset
 ts-node scripts/SYTEPLOT\ NFT/change-trust.ts SYTEPLOT <accountSecretKey> testnet
 
@@ -91,7 +94,7 @@ ts-node scripts/SYTEPLOT\ NFT/change-trust.ts SYTEPLOT <accountSecretKey> mainne
 
 # Example:
 ts-node scripts/SYTEPLOT\ NFT/change-trust.ts SYTEPLOT SCV22GCANOEBBMARWVBH7GQCJR5GVWAKSUA2DTNXI2BONAMPFTS46WAU mainnet
-```
+````
 
 #### Step 4: Send Payment (1 SYTEPLOT NFT)
 
@@ -106,6 +109,7 @@ ts-node scripts/SYTEPLOT\ NFT/send-payment.ts SYTEPLOT GABKZ6FQIU3L5WGMQNUL4QPDP
 ### Quick Reference: Complete SYTEPLOT NFT Distribution
 
 **Testnet:**
+
 ```bash
 # 1. Issuer setup (one-time)
 ts-node scripts/SYTEPLOT\ NFT/set-home-domain.ts <issuerSecretKey> testnet
@@ -122,6 +126,7 @@ ts-node scripts/SYTEPLOT\ NFT/send-payment.ts SYTEPLOT <accountPublicKey> <issue
 ```
 
 **Mainnet:**
+
 ```bash
 # 1. Issuer setup (one-time)
 ts-node scripts/SYTEPLOT\ NFT/set-home-domain.ts <issuerSecretKey> mainnet
@@ -140,7 +145,7 @@ ts-node scripts/SYTEPLOT\ NFT/send-payment.ts SYTEPLOT <accountPublicKey> <issue
 
 - **Order Matters**: Steps must be completed in order (fund → trustline → payment)
 - **Issuer Setup**: Home domain and authorization flags should be set once per network before distributing NFTs
-- **Account Requirements**: 
+- **Account Requirements**:
   - Account must be funded with XLM before adding trustline (for transaction fees)
   - Account must have trustline before receiving SYTEPLOT NFTs
 - **Issuer Secret Key**: Required for issuer setup and payment steps. The secret key must correspond to the hardcoded issuer address.

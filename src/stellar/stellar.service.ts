@@ -1708,13 +1708,13 @@ class StellarService {
 
   /**
    * Sends a SYTEPLOT NFT to a buyer's wallet on the Stellar network.
-   * 
+   *
    * This function performs the following operations:
    * 1. Validates environment configuration and Metadata inputs
    * 2. Extracts wallet credentials from Metadata (buyer_wallet_id and buyer_wallet_secret)
    * 3. Establishes a trustline for SYTEPLOT NFT using sponsorship (if not already exists)
    * 4. Sends the SYTEPLOT NFT payment from the distributor to the buyer's wallet
-   * 
+   *
    * @param UserId - The ID of the user receiving the NFT
    * @param PlotId - The ID of the plot associated with this NFT
    * @param Metadata - Metadata object containing plot information and buyer wallet credentials
@@ -1728,19 +1728,18 @@ class StellarService {
     UserId: number,
     PlotId: number,
     Metadata: {
-      plot_no: number,
-      estate_name: string,
-      size_of_plot: number,
-      plot_url: string,
-      price_of_plot: number,
-      date_of_allocation: string,
-      coordinate_of_plot: string,
-      buyer_wallet_id: string, // Used as the wallet address for NFT transfer
-      buyer_wallet_secret: string, // Used as the encrypted secret key for wallet operations
-      estate_company_name: string,
-      property_verification_no: number,
-    },
-  
+      plot_no: number;
+      estate_name: string;
+      size_of_plot: number;
+      plot_url: string;
+      price_of_plot: number;
+      date_of_allocation: string;
+      coordinate_of_plot: string;
+      buyer_wallet_id: string; // Used as the wallet address for NFT transfer
+      buyer_wallet_secret: string; // Used as the encrypted secret key for wallet operations
+      estate_company_name: string;
+      property_verification_no: number;
+    }
   ): Promise<{
     UserId: number;
     PlotId: number;
@@ -1886,7 +1885,7 @@ class StellarService {
 
     // Initialize Stellar Horizon server connection
     const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
-    
+
     // Get sponsor public key for fee sponsorship operations
     const sponsorPubKey = process.env.SPONSOR_PUBLIC_KEY;
     if (!sponsorPubKey) {
@@ -1962,7 +1961,9 @@ class StellarService {
       const derivedPublicKey = keypair.publicKey();
 
       if (derivedPublicKey !== WalletAddressFromMetadata) {
-        logger.error(`${logContext} Secret key mismatch. Wallet: ${WalletAddressFromMetadata}, Derived: ${derivedPublicKey}`);
+        logger.error(
+          `${logContext} Secret key mismatch. Wallet: ${WalletAddressFromMetadata}, Derived: ${derivedPublicKey}`
+        );
         throw new HttpException(
           {
             status: 400,
@@ -2016,7 +2017,7 @@ class StellarService {
     try {
       /**
        * Step 1: Establish trustline for SYTEPLOT NFT
-       * 
+       *
        * Before a wallet can receive an asset on Stellar, it must establish a trustline.
        * This operation uses sponsorship to pay for the trustline reserves, so the buyer
        * doesn't need to have XLM in their account. Both the sponsor and buyer must sign.
@@ -2120,20 +2121,59 @@ class StellarService {
 
       /**
        * Step 2: Send SYTEPLOT NFT payment from distributor to buyer
-       * 
+       *
        * The distributor account sends the NFT to the buyer's wallet.
        * The transaction uses fee-bumping so the sponsor pays the transaction fee,
        * allowing the operation to proceed even if the distributor has minimal XLM.
        */
-      logger.debug(`${logContext} Step 2: Sending SYTEPLOT NFT payment from distributor to ${WalletAddressFromMetadata}`);
+      logger.debug(
+        `${logContext} Step 2: Sending SYTEPLOT NFT payment from distributor to ${WalletAddressFromMetadata}`
+      );
 
       // Load distributor account for the payment transaction
       let distributorAccount;
       try {
-        distributorAccount = await server.loadAccount(process.env.SYTE_DISTRIBUTOR_ADDRESS);
+        const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS;
+        const horizonUrl = process.env.STELLAR_HORIZON_URL;
+        
+        logger.debug(`${logContext} Attempting to load distributor account: ${distributorAddress}`);
+        logger.debug(`${logContext} Using Horizon URL: ${horizonUrl}`);
+        logger.debug(`${logContext} Server URL: ${server.serverURL}`);
+        
+        if (!distributorAddress) {
+          throw new HttpException(
+            {
+              status: 500,
+              success: false,
+              message: 'Distributor address not configured',
+              errorCode: 'DISTRIBUTOR_ADDRESS_NOT_CONFIGURED',
+              retryable: false,
+              details: 'SYTE_DISTRIBUTOR_ADDRESS environment variable is not set.',
+            },
+            500
+          );
+        }
+
+        distributorAccount = await server.loadAccount(distributorAddress);
+        logger.debug(`${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`);
       } catch (accountError) {
-        if (accountError instanceof Error && (accountError.message.includes('404') || accountError.message.includes('Not Found'))) {
-          logger.error(`${logContext} Distributor account does not exist on Stellar network: ${process.env.SYTE_DISTRIBUTOR_ADDRESS}`);
+        // Log the actual error and Horizon URL for debugging
+        const horizonUrl = process.env.STELLAR_HORIZON_URL || 'not set';
+        const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS || 'not set';
+        const errorMessage = accountError instanceof Error ? accountError.message : String(accountError);
+        const errorString = JSON.stringify(accountError);
+        
+        logger.error(
+          `${logContext} Failed to load distributor account. Address: ${distributorAddress}, Horizon URL: ${horizonUrl}, Server URL: ${server.serverURL}, Error: ${errorMessage}, Full Error: ${errorString.substring(0, 500)}`
+        );
+
+        if (
+          accountError instanceof Error &&
+          (accountError.message.includes('404') || accountError.message.includes('Not Found'))
+        ) {
+          logger.error(
+            `${logContext} Distributor account does not exist on Stellar network: ${process.env.SYTE_DISTRIBUTOR_ADDRESS}`
+          );
           throw new HttpException(
             {
               status: 500,
@@ -2141,7 +2181,7 @@ class StellarService {
               message: 'Distributor account not found on Stellar network',
               errorCode: 'DISTRIBUTOR_ACCOUNT_NOT_FOUND',
               retryable: false,
-              details: `The distributor account (${process.env.SYTE_DISTRIBUTOR_ADDRESS}) does not exist on the Stellar network. Please ensure the account has been created and funded.`,
+              details: `The distributor account (${process.env.SYTE_DISTRIBUTOR_ADDRESS}) does not exist on the Stellar network at ${horizonUrl}. Please ensure the account has been created and funded on the correct network (testnet/mainnet).`,
             },
             500
           );
@@ -2192,7 +2232,7 @@ class StellarService {
     } catch (error) {
       /**
        * Error Handling: Comprehensive error handling for Stellar transaction failures
-       * 
+       *
        * This section handles various Stellar-specific errors and provides meaningful
        * error messages to help diagnose issues with NFT transfers.
        */
@@ -2236,7 +2276,12 @@ class StellarService {
         errorString.includes('404')
       ) {
         // Check if it's the asset issuer
-        if (errorMessage.includes('asset') || errorMessage.includes('issuer') || errorString.includes('asset') || errorString.includes('issuer')) {
+        if (
+          errorMessage.includes('asset') ||
+          errorMessage.includes('issuer') ||
+          errorString.includes('asset') ||
+          errorString.includes('issuer')
+        ) {
           throw new HttpException(
             {
               status: 500,
@@ -2249,7 +2294,7 @@ class StellarService {
             500
           );
         }
-        
+
         // Generic "Not Found" error
         throw new HttpException(
           {
@@ -2258,7 +2303,8 @@ class StellarService {
             message: 'Resource not found on Stellar network',
             errorCode: 'STELLAR_RESOURCE_NOT_FOUND',
             retryable: false,
-            details: 'A required resource (account, asset, or issuer) was not found on the Stellar network. Please verify all addresses are correct and accounts exist on-chain.',
+            details:
+              'A required resource (account, asset, or issuer) was not found on the Stellar network. Please verify all addresses are correct and accounts exist on-chain.',
           },
           404
         );

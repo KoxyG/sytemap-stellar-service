@@ -19,7 +19,6 @@ import { Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder, St
 // Hardcoded home domain
 const HOME_DOMAIN = 'sytemap.com';
 
-
 // Hardcoded issuer address
 const ISSUER_ADDRESS = 'GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC';
 
@@ -34,10 +33,7 @@ interface SetHomeDomainResult {
 /**
  * Set home domain for issuer account
  */
-async function setHomeDomain(
-  issuerSecretKey: string,
-  network: 'testnet' | 'mainnet'
-): Promise<SetHomeDomainResult> {
+async function setHomeDomain(issuerSecretKey: string, network: 'testnet' | 'mainnet'): Promise<SetHomeDomainResult> {
   try {
     // Validate inputs
     if (!issuerSecretKey || typeof issuerSecretKey !== 'string' || issuerSecretKey.trim().length === 0) {
@@ -84,9 +80,7 @@ async function setHomeDomain(
     }
 
     // Set horizon URL and network passphrase based on network
-    const horizonUrl = network === 'testnet' 
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org';
+    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
     const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
 
     // Connect to Stellar network
@@ -190,7 +184,7 @@ function parseArguments(): {
     console.error('\nUsage:');
     console.error('   ts-node scripts/SYTEPLOT\\ NFT/set-home-domain.ts <issuerSecretKey> <network>');
     console.error('\nParameters:');
-    console.error('   issuerSecretKey - The issuer\'s secret key for signing');
+    console.error("   issuerSecretKey - The issuer's secret key for signing");
     console.error('   network         - Either "testnet" or "mainnet"');
     console.error('\nExample:');
     console.error('   ts-node scripts/SYTEPLOT\\ NFT/set-home-domain.ts S... testnet');
@@ -224,7 +218,9 @@ async function main() {
 
     console.log(`📋 Configuration:`);
     console.log(`   Network: ${network}`);
-    console.log(`   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`);
+    console.log(
+      `   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`
+    );
     console.log(`   Issuer Address: ${ISSUER_ADDRESS}`);
     console.log(`   Home Domain: ${HOME_DOMAIN}`);
     console.log('');
@@ -277,4 +273,3 @@ async function main() {
 
 // Run the script
 main();
-

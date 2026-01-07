@@ -14,7 +14,16 @@
  */
 
 import 'dotenv/config';
-import { Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder, StrKey, Asset } from '@stellar/stellar-sdk';
+import {
+  Keypair,
+  Horizon,
+  BASE_FEE,
+  Networks,
+  Operation,
+  TransactionBuilder,
+  StrKey,
+  Asset,
+} from '@stellar/stellar-sdk';
 
 // Hardcoded issuer address
 const ISSUER_ADDRESS = 'GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC';
@@ -103,7 +112,8 @@ async function sendPayment(
         sourceAccount: '',
         destinationAccount: trimmedDestination,
         amount: PAYMENT_AMOUNT,
-        error: 'Invalid destination account format. Must be a valid Stellar public key (starts with G and is 56 characters long).',
+        error:
+          'Invalid destination account format. Must be a valid Stellar public key (starts with G and is 56 characters long).',
       };
     }
 
@@ -165,9 +175,7 @@ async function sendPayment(
     }
 
     // Set horizon URL and network passphrase based on network
-    const horizonUrl = network === 'testnet' 
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org';
+    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
     const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
 
     // Create asset object
@@ -307,7 +315,7 @@ function parseArguments(): {
     console.error('\nParameters:');
     console.error('   assetCode         - The asset code (e.g., "SYTE")');
     console.error('   destinationAccount - The destination/distributor account public key');
-    console.error('   issuerSecretKey   - The issuer\'s secret key for signing');
+    console.error("   issuerSecretKey   - The issuer's secret key for signing");
     console.error('   network           - Either "testnet" or "mainnet"');
     console.error('\nExample:');
     console.error('   ts-node scripts/send-payment.ts SYTE GABC123... S... testnet');
@@ -342,7 +350,9 @@ async function main() {
 
     console.log(`📋 Configuration:`);
     console.log(`   Network: ${network}`);
-    console.log(`   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`);
+    console.log(
+      `   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`
+    );
     console.log(`   Issuer Address: ${ISSUER_ADDRESS}`);
     console.log(`   Asset Code: ${assetCode}`);
     console.log(`   Destination Account: ${destinationAccount}`);
@@ -396,4 +406,3 @@ async function main() {
 
 // Run the script
 main();
-

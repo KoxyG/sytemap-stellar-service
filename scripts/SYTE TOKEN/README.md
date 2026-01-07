@@ -77,6 +77,7 @@ ts-node scripts/send-payment.ts SYTE GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ123
 ### Quick Reference: Complete SYTE Token Distribution
 
 **Testnet:**
+
 ```bash
 # 1. Fund account
 ts-node scripts/fund-testnet-accounts.ts <accountPublicKey>
@@ -89,6 +90,7 @@ ts-node scripts/send-payment.ts SYTE <accountPublicKey> <issuerSecretKey> testne
 ```
 
 **Mainnet:**
+
 ```bash
 # 1. Fund account (manual or other method - fund-testnet-accounts.ts only works on testnet)
 
@@ -102,7 +104,7 @@ ts-node scripts/send-payment.ts SYTE <accountPublicKey> <issuerSecretKey> mainne
 ### Important Notes
 
 - **Order Matters**: Steps must be completed in order (fund → trustline → payment)
-- **Account Requirements**: 
+- **Account Requirements**:
   - Account must be funded with XLM before adding trustline (for transaction fees)
   - Account must have trustline before receiving SYTE tokens
 - **Issuer Secret Key**: Required for Step 3 (payment). The secret key must correspond to the hardcoded issuer address.
@@ -213,14 +215,17 @@ Example output:
 ### Troubleshooting
 
 **Error: "Invalid Stellar public key format"**
+
 - Ensure the public key starts with `G` and is 56 characters long
 - Check for typos or extra spaces
 
 **Error: "Friendbot request failed"**
+
 - Friendbot may be rate-limited - wait a few minutes and try again
 - Ensure you're using testnet public keys (not mainnet)
 
 **Error: "STELLAR_HORIZON_URL is not set"**
+
 - Add `STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org` to your `.env` file
 
 ## Change Trust
@@ -312,4 +317,3 @@ ts-node scripts/send-payment.ts SYTE GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ123
 - `generate-encryption-key.ts` - Generate encryption keys for secret key storage
 - `fund-testnet-accounts.ts` - Fund testnet accounts using Friendbot
 - `change-trust.ts` - Add or update trustlines for assets
-

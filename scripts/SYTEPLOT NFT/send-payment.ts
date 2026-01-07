@@ -7,21 +7,30 @@
  * The issuer address and amount are hardcoded:
  *   - Issuer: GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC
  *   - Amount: 0.1 tokens (1,000,000 NFTs)
- * 
+ *
  * The transaction is signed with the issuer's secret key.
  *
  * Usage:
  *   ts-node scripts/SYTEPLOT\ NFT/send-payment.ts <assetCode> <destinationAccount> <issuerSecretKey> <network>
  *
  * Network options: testnet or mainnet
- * 
+ *
  * Example:
  *   # Send 1 million NFTs (0.1 tokens) to distributor
  *   ts-node scripts/SYTEPLOT\ NFT/send-payment.ts SYTEPLOT <distributorAddress> <issuerSecretKey> testnet
  */
 
 import 'dotenv/config';
-import { Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder, StrKey, Asset } from '@stellar/stellar-sdk';
+import {
+  Keypair,
+  Horizon,
+  BASE_FEE,
+  Networks,
+  Operation,
+  TransactionBuilder,
+  StrKey,
+  Asset,
+} from '@stellar/stellar-sdk';
 
 // Hardcoded issuer address
 const ISSUER_ADDRESS = 'GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC';
@@ -112,7 +121,8 @@ async function sendPayment(
         sourceAccount: '',
         destinationAccount: trimmedDestination,
         amount: PAYMENT_AMOUNT,
-        error: 'Invalid destination account format. Must be a valid Stellar public key (starts with G and is 56 characters long).',
+        error:
+          'Invalid destination account format. Must be a valid Stellar public key (starts with G and is 56 characters long).',
       };
     }
 
@@ -174,9 +184,7 @@ async function sendPayment(
     }
 
     // Set horizon URL and network passphrase based on network
-    const horizonUrl = network === 'testnet' 
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org';
+    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
     const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
 
     // Create asset object
@@ -231,7 +239,7 @@ async function sendPayment(
 
     // Calculate number of NFTs (each NFT is 0.0000001 tokens)
     const nftCount = Math.floor(parseFloat(PAYMENT_AMOUNT) / 0.0000001);
-    
+
     // Build transaction
     console.log(`   Building payment transaction...`);
     console.log(`   Source: ${sourceAccount}`);
@@ -316,11 +324,13 @@ function parseArguments(): {
   if (args.length < 4) {
     console.error('❌ Error: Missing required arguments');
     console.error('\nUsage:');
-    console.error('   ts-node scripts/SYTEPLOT\\ NFT/send-payment.ts <assetCode> <destinationAccount> <issuerSecretKey> <network>');
+    console.error(
+      '   ts-node scripts/SYTEPLOT\\ NFT/send-payment.ts <assetCode> <destinationAccount> <issuerSecretKey> <network>'
+    );
     console.error('\nParameters:');
     console.error('   assetCode         - The asset code (e.g., "SYTEPLOT")');
     console.error('   destinationAccount - The destination/distributor account public key');
-    console.error('   issuerSecretKey   - The issuer\'s secret key for signing');
+    console.error("   issuerSecretKey   - The issuer's secret key for signing");
     console.error('   network           - Either "testnet" or "mainnet"');
     console.error('\nNote:');
     console.error('   Amount is hardcoded to 0.1 tokens (1,000,000 NFTs)');
@@ -358,7 +368,9 @@ async function main() {
 
     console.log(`📋 Configuration:`);
     console.log(`   Network: ${network}`);
-    console.log(`   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`);
+    console.log(
+      `   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`
+    );
     console.log(`   Issuer Address: ${ISSUER_ADDRESS}`);
     console.log(`   Asset Code: ${assetCode}`);
     console.log(`   Destination Account: ${destinationAccount}`);

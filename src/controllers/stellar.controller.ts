@@ -155,7 +155,7 @@ class StellarController {
    * POST
    * Send SYTEPLOT NFT to a specified wallet address.
    * This function will add the trustline (if needed) and send the NFT in one operation.
-   * 
+   *
    * Note: The wallet address and encrypted secret key are extracted from the Metadata object
    * (buyer_wallet_id and buyer_wallet_secret fields).
    */

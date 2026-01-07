@@ -14,7 +14,16 @@
  */
 
 import 'dotenv/config';
-import { Keypair, Horizon, BASE_FEE, Networks, Operation, TransactionBuilder, AuthRevocableFlag, AuthClawbackEnabledFlag } from '@stellar/stellar-sdk';
+import {
+  Keypair,
+  Horizon,
+  BASE_FEE,
+  Networks,
+  Operation,
+  TransactionBuilder,
+  AuthRevocableFlag,
+  AuthClawbackEnabledFlag,
+} from '@stellar/stellar-sdk';
 
 // Hardcoded issuer address
 const ISSUER_ADDRESS = 'GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC';
@@ -95,9 +104,7 @@ async function setAuthorizationFlags(
     }
 
     // Set horizon URL and network passphrase based on network
-    const horizonUrl = network === 'testnet' 
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org';
+    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
     const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
 
     // Connect to Stellar network
@@ -227,7 +234,7 @@ function parseArguments(): {
     console.error('\nUsage:');
     console.error('   ts-node scripts/SYTEPLOT\\ NFT/set-authorization-flags.ts <issuerSecretKey> <network>');
     console.error('\nParameters:');
-    console.error('   issuerSecretKey - The issuer\'s secret key for signing');
+    console.error("   issuerSecretKey - The issuer's secret key for signing");
     console.error('   network         - Either "testnet" or "mainnet"');
     console.error('\nExample:');
     console.error('   ts-node scripts/SYTEPLOT\\ NFT/set-authorization-flags.ts S... testnet');
@@ -261,7 +268,9 @@ async function main() {
 
     console.log(`📋 Configuration:`);
     console.log(`   Network: ${network}`);
-    console.log(`   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`);
+    console.log(
+      `   Horizon URL: ${network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org'}`
+    );
     console.log(`   Issuer Address: ${ISSUER_ADDRESS}`);
     console.log(`   Flags to Set:`);
     console.log(`     - Auth Revocable: true`);
@@ -318,4 +327,3 @@ async function main() {
 
 // Run the script
 main();
-
