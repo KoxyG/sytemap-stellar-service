@@ -4,7 +4,7 @@
  * Send Payment Script
  *
  * This script sends a payment of a custom asset to a destination/distributor account.
- * The issuer address is hardcoded, and the amount is hardcoded to 1 million tokens.
+ * The issuer address is hardcoded, and the amount is hardcoded to 100 billion tokens (100,000,000,000).
  * The transaction is signed with the issuer's secret key.
  *
  * Usage:
@@ -28,8 +28,9 @@ import {
 // Hardcoded issuer address
 const ISSUER_ADDRESS = 'GDF55TDEZ4ERQEEPIIZBHSU34I5MQRZVNALBTU7OVDQZPYZUHKZDOQTC';
 
-// Hardcoded amount: 1 million tokens
-const PAYMENT_AMOUNT = '1000000';
+// Hardcoded amount: 100 billion tokens (100,000,000,000)
+// Stellar max limit: 922,337,203,685.4775807 (about 922 billion)
+const PAYMENT_AMOUNT = '100000000000';
 
 interface PaymentResult {
   success: boolean;
@@ -356,7 +357,7 @@ async function main() {
     console.log(`   Issuer Address: ${ISSUER_ADDRESS}`);
     console.log(`   Asset Code: ${assetCode}`);
     console.log(`   Destination Account: ${destinationAccount}`);
-    console.log(`   Amount: ${PAYMENT_AMOUNT} tokens (hardcoded)`);
+    console.log(`   Amount: ${PAYMENT_AMOUNT} tokens (100 billion, hardcoded)`);
     console.log('');
 
     // Send payment

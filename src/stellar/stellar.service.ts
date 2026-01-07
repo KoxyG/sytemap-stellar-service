@@ -2135,11 +2135,11 @@ class StellarService {
       try {
         const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS;
         const horizonUrl = process.env.STELLAR_HORIZON_URL;
-        
+
         logger.debug(`${logContext} Attempting to load distributor account: ${distributorAddress}`);
         logger.debug(`${logContext} Using Horizon URL: ${horizonUrl}`);
         logger.debug(`${logContext} Server URL: ${server.serverURL}`);
-        
+
         if (!distributorAddress) {
           throw new HttpException(
             {
@@ -2155,14 +2155,16 @@ class StellarService {
         }
 
         distributorAccount = await server.loadAccount(distributorAddress);
-        logger.debug(`${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`);
+        logger.debug(
+          `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
+        );
       } catch (accountError) {
         // Log the actual error and Horizon URL for debugging
         const horizonUrl = process.env.STELLAR_HORIZON_URL || 'not set';
         const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS || 'not set';
         const errorMessage = accountError instanceof Error ? accountError.message : String(accountError);
         const errorString = JSON.stringify(accountError);
-        
+
         logger.error(
           `${logContext} Failed to load distributor account. Address: ${distributorAddress}, Horizon URL: ${horizonUrl}, Server URL: ${server.serverURL}, Error: ${errorMessage}, Full Error: ${errorString.substring(0, 500)}`
         );
