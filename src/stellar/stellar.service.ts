@@ -16,6 +16,33 @@ import { HttpException } from '../exceptions/http.exception';
 import logger from '../utils/logger.utils';
 
 /**
+ * Balance type for Stellar account balances
+ */
+interface StellarBalance {
+  asset_type: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  balance: string;
+  limit?: string;
+  buying_liabilities?: string;
+  selling_liabilities?: string;
+}
+
+/**
+ * Stellar operation type with common properties
+ */
+interface StellarOperation {
+  type: string;
+  amount?: string;
+  limit?: string;
+  starting_balance?: string;
+  asset_type?: string;
+  asset_code?: string;
+  from?: string;
+  to?: string;
+}
+
+/**
  * Stellar Service
  * Handles all Stellar blockchain operations
  *
@@ -841,7 +868,7 @@ class StellarService {
       try {
         const account = await server.loadAccount(publicKey);
         const trustlineExists = account.balances.some(
-          (balance: any) =>
+          (balance: StellarBalance) =>
             balance.asset_type !== 'native' &&
             balance.asset_code === process.env.SYTE_ASSET_CODE &&
             balance.asset_issuer === process.env.SYTE_ISSUER_ADDRESS
@@ -862,7 +889,19 @@ class StellarService {
       logger.info(`Trustline added successfully for account: ${publicKey}`);
     } catch (error) {
       // Log detailed error information for debugging - capture everything
-      const errorLog: any = {
+      const errorLog: {
+        errorType: string;
+        message?: string;
+        stack?: string;
+        name?: string;
+        response?: {
+          status?: number;
+          statusText?: string;
+          data?: unknown;
+        };
+        extras?: unknown;
+        result_codes?: unknown;
+      } = {
         errorType: error?.constructor?.name || typeof error,
       };
 
@@ -873,7 +912,11 @@ class StellarService {
       }
 
       // Capture Stellar SDK error response structure
-      const errorAny = error as any;
+      const errorAny = error as {
+        response?: { status?: number; statusText?: string; data?: unknown };
+        extras?: unknown;
+        result_codes?: unknown;
+      };
       if (errorAny.response) {
         errorLog.response = {
           status: errorAny.response.status,
@@ -1357,7 +1400,7 @@ class StellarService {
         const server = new Horizon.Server(process.env.STELLAR_HORIZON_URL);
         const account = await server.loadAccount(walletAddress);
         const trustlineExists = account.balances.some(
-          (balance: any) =>
+          (balance: StellarBalance) =>
             balance.asset_type !== 'native' &&
             balance.asset_code === process.env.SYTE_ASSET_CODE &&
             balance.asset_issuer === process.env.SYTE_ISSUER_ADDRESS
@@ -1442,7 +1485,7 @@ class StellarService {
       wallet: {
         address: string;
         network: string;
-        balances: any[];
+        balances: StellarBalance[];
       };
     };
   }> {
@@ -1522,7 +1565,16 @@ class StellarService {
     data: {
       walletAddress: string;
       totalTransactions: number;
-      transactions: any[];
+      transactions: Array<{
+        transactionHash: string;
+        timestamp: string;
+        operationType: string;
+        amount: string | null;
+        asset: string | null;
+        from: string | null;
+        to: string | null;
+        description: string;
+      }>;
     };
   }> {
     const logContext = '[StellarService.getStellarAllTransactionHistory]';
@@ -1608,13 +1660,18 @@ class StellarService {
             return !excludedOperations.includes(op.type);
           })
           .map((op) => ({
+            transactionHash: transaction.hash,
             operationType: op.type,
-            amount: (op as any).amount || (op as any).limit || (op as any).starting_balance || null,
-            asset: (op as any).asset_type === 'native' ? 'XLM' : (op as any).asset_code || null,
-            from: (op as any).from || null,
-            to: (op as any).to || null,
+            amount:
+              (op as StellarOperation).amount ||
+              (op as StellarOperation).limit ||
+              (op as StellarOperation).starting_balance ||
+              null,
+            asset:
+              (op as StellarOperation).asset_type === 'native' ? 'XLM' : (op as StellarOperation).asset_code || null,
+            from: (op as StellarOperation).from || null,
+            to: (op as StellarOperation).to || null,
             timestamp: transaction.created_at,
-            status: 'success',
             description: this.getOperationDescription(op.type, walletAddress, op),
           }));
       })
@@ -1635,7 +1692,7 @@ class StellarService {
   }
 
   // Private function
-  private async getStellarAssetBalances(walletAddress: string, server: Horizon.Server): Promise<any[]> {
+  private async getStellarAssetBalances(walletAddress: string, server: Horizon.Server): Promise<StellarBalance[]> {
     const logContext = '[StellarService.getStellarAssetBalances]';
     try {
       const account = await server.accounts().accountId(walletAddress).call();
@@ -1676,7 +1733,7 @@ class StellarService {
   }
 
   // Helper method to get operation descriptions
-  private getOperationDescription(operationType: string, walletAddress: string, op: any): string {
+  private getOperationDescription(operationType: string, walletAddress: string, op: StellarOperation): string {
     switch (operationType) {
       case 'payment':
         return op.from === walletAddress ? 'Payment Sent' : 'Payment Received';
@@ -1911,7 +1968,7 @@ class StellarService {
           // This ensures the SDK's internal HTTP client is fully initialized
           await server.root();
           logger.debug(`${logContext} Server connection warmed up successfully via SDK root endpoint`);
-        } catch (warmupError: any) {
+        } catch (warmupError: unknown) {
           // Even if the warmup fails, the connection attempt itself helps initialize the SDK
           // Don't throw - the actual operation will handle errors with retries
           const errorMsg = warmupError instanceof Error ? warmupError.message : String(warmupError);
@@ -1919,7 +1976,7 @@ class StellarService {
             `${logContext} Server warmup completed (SDK connection established, may have failed but that's ok): ${errorMsg}`
           );
         }
-      } catch (warmupError: any) {
+      } catch (warmupError: unknown) {
         // Log but don't throw - warmup failures shouldn't block operations
         // The actual operation will handle errors with retries
         const errorMsg = warmupError instanceof Error ? warmupError.message : String(warmupError);
@@ -1948,11 +2005,11 @@ class StellarService {
     logContext: string,
     maxRetries: number = 3,
     warmupDelay: number = 200
-  ): Promise<any> {
-    let account: any = null;
+  ): Promise<Horizon.AccountResponse> {
+    let account: Horizon.AccountResponse | null = null;
     let retries = maxRetries;
     let attemptNumber = 0;
-    let lastError: any = null;
+    let lastError: unknown = null;
 
     while (retries > 0 && !account) {
       attemptNumber++;
@@ -1973,10 +2030,13 @@ class StellarService {
         account = await server.loadAccount(accountAddress);
         logger.debug(`${logContext} ${accountName} account loaded successfully. Sequence: ${account.sequenceNumber()}`);
         break;
-      } catch (loadError: any) {
+      } catch (loadError: unknown) {
         lastError = loadError;
         retries--;
-        const errorStatus = loadError?.response?.status;
+        const loadErrorWithResponse = loadError as {
+          response?: { status?: number; data?: unknown };
+        } | null;
+        const errorStatus = loadErrorWithResponse?.response?.status;
         const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
         const errorString = JSON.stringify(loadError);
 
@@ -2016,17 +2076,29 @@ class StellarService {
 
     if (!account) {
       // All retries exhausted - throw the last error with context
-      const errorStatus = lastError?.response?.status;
+      const lastErrorWithResponse = lastError as {
+        response?: { status?: number; data?: { detail?: string; title?: string } };
+        message?: string;
+      } | null;
+      const errorStatus = lastErrorWithResponse?.response?.status;
       const errorDetail =
-        lastError?.response?.data?.detail || lastError?.response?.data?.title || lastError?.message || '';
+        lastErrorWithResponse?.response?.data?.detail ||
+        lastErrorWithResponse?.response?.data?.title ||
+        (lastError instanceof Error ? lastError.message : String(lastError)) ||
+        '';
       const errorMsg = lastError instanceof Error ? lastError.message : String(lastError);
 
       const error = new Error(
         `Failed to load ${accountName} account (${accountAddress}) after ${maxRetries} retry attempts. Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}, Detail: ${errorDetail}`
       );
       // Preserve original error properties
-      (error as any).originalError = lastError;
-      (error as any).response = lastError?.response;
+      const errorWithExtras = error as Error & {
+        originalError?: unknown;
+        response?: { status?: number; data?: unknown };
+      };
+      errorWithExtras.originalError = lastError;
+      const lastErrorForResponse = lastError as { response?: { status?: number; data?: unknown } } | null;
+      errorWithExtras.response = lastErrorForResponse?.response;
       throw error;
     }
 
@@ -2055,7 +2127,7 @@ class StellarService {
 
       // Check if trustline already exists
       const trustlineExists = account.balances.some(
-        (balance: any) =>
+        (balance: StellarBalance) =>
           balance.asset_type !== 'native' &&
           balance.asset_code === sytePlotAsset.getCode() &&
           balance.asset_issuer === sytePlotAsset.getIssuer()
@@ -2064,7 +2136,7 @@ class StellarService {
       if (trustlineExists) {
         // Check if account already has the NFT
         const nftBalance = account.balances.find(
-          (balance: any) =>
+          (balance: StellarBalance) =>
             balance.asset_type !== 'native' &&
             balance.asset_code === sytePlotAsset.getCode() &&
             balance.asset_issuer === sytePlotAsset.getIssuer()
@@ -2375,7 +2447,10 @@ class StellarService {
       }
 
       // Handle 405 (Method Not Allowed) - often a transient SDK/network issue on first call
-      const httpErrorStatus = (error as any)?.response?.status;
+      const errorWithResponse = error as {
+        response?: { status?: number; data?: unknown };
+      } | null;
+      const httpErrorStatus = errorWithResponse?.response?.status;
       const httpErrorMessage = error instanceof Error ? error.message : String(error);
       const httpErrorString = JSON.stringify(error);
 
