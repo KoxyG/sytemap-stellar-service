@@ -35,6 +35,7 @@ class StellarService {
     networkPassphrase: process.env.NODE_ENV === 'production' ? Networks.PUBLIC : Networks.TESTNET,
   };
   private readonly encryptionService = encryptionService;
+  private serverWarmupPromise: Promise<void> | null = null; // Cache warmup promise to avoid multiple warmups
 
   /**
    * Generate a mnemonic phrase, derive a keypair from it, create the account on Stellar network,
@@ -1709,6 +1710,551 @@ class StellarService {
   }
 
   /**
+   * Validate all required environment variables for SYTEPLOT NFT operations
+   * @private
+   */
+  private validateSytePlotNftEnvironment(logContext: string): void {
+    const requiredEnvVars = [
+      { key: 'STELLAR_HORIZON_URL', errorCode: 'CONFIG_MISSING_HORIZON_URL' },
+      { key: 'SYTE_DISTRIBUTOR_ADDRESS', errorCode: 'CONFIG_MISSING_DISTRIBUTOR_ADDRESS' },
+      { key: 'SYTE_DISTRIBUTOR_PRIVATE_KEY', errorCode: 'CONFIG_MISSING_DISTRIBUTOR_SECRET' },
+      { key: 'SPONSOR_PRIVATE_KEY', errorCode: 'CONFIG_MISSING_SPONSOR_SECRET' },
+      { key: 'SPONSOR_PUBLIC_KEY', errorCode: 'CONFIG_MISSING_SPONSOR_KEY' },
+      { key: 'SYTEPLOT_ASSET_CODE', errorCode: 'CONFIG_MISSING_SYTEPLOT_ASSET_CODE' },
+      { key: 'SYTEPLOT_ISSUER_ADDRESS', errorCode: 'CONFIG_MISSING_SYTEPLOT_ISSUER_ADDRESS' },
+    ];
+
+    for (const { key, errorCode } of requiredEnvVars) {
+      if (!process.env[key]) {
+        logger.error(`${logContext} Missing ${key}`);
+        throw new HttpException(
+          {
+            status: 500,
+            success: false,
+            message: `${key} not configured`,
+            errorCode: errorCode,
+            retryable: false,
+            details: 'Server configuration error. Please contact support.',
+          },
+          500
+        );
+      }
+    }
+  }
+
+  /**
+   * Validate wallet address format
+   * @private
+   */
+  private validateWalletAddress(walletAddress: string, logContext: string): void {
+    if (!walletAddress || typeof walletAddress !== 'string') {
+      logger.error(`${logContext} Invalid wallet address: ${walletAddress}`);
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address',
+          errorCode: 'INVALID_WALLET_ADDRESS',
+          retryable: false,
+          details: 'The provided wallet address is invalid or missing. Please provide a valid Stellar public key.',
+        },
+        400
+      );
+    }
+
+    if (!StrKey.isValidEd25519PublicKey(walletAddress)) {
+      logger.error(`${logContext} Invalid Stellar public key format: ${walletAddress}`);
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Invalid wallet address format',
+          errorCode: 'INVALID_WALLET_ADDRESS_FORMAT',
+          retryable: false,
+          details: 'The wallet address must be a valid Stellar public key (starts with G and is 56 characters long).',
+        },
+        400
+      );
+    }
+  }
+
+  /**
+   * Decrypt and validate secret key matches wallet address
+   * @private
+   */
+  private async decryptAndValidateSecretKey(
+    encryptedSecretKey: string,
+    walletAddress: string,
+    logContext: string
+  ): Promise<string> {
+    if (!encryptedSecretKey) {
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Encrypted secret key is required',
+          errorCode: 'MISSING_ENCRYPTED_SECRET_KEY',
+          retryable: false,
+          details: 'Encrypted secret key must be provided in Metadata.buyer_wallet_secret.',
+        },
+        400
+      );
+    }
+
+    // Decrypt the secret key
+    let secretKey: string;
+    try {
+      secretKey = await this.encryptionService.decryptSecretKey(encryptedSecretKey);
+      logger.debug(`${logContext} Secret key decrypted for wallet ${walletAddress}`);
+    } catch (error) {
+      logger.error(`${logContext} Failed to decrypt secret key: ${error instanceof Error ? error.message : error}`);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'Failed to decrypt secret key',
+          errorCode: 'SECRET_KEY_DECRYPTION_FAILED',
+          retryable: false,
+          details:
+            'An error occurred while decrypting the secret key. Make sure the encrypted secret key is the one provided during account creation',
+        },
+        500
+      );
+    }
+
+    // Validate secret key matches wallet address
+    try {
+      const keypair = Keypair.fromSecret(secretKey);
+      const derivedPublicKey = keypair.publicKey();
+
+      if (derivedPublicKey !== walletAddress) {
+        logger.error(`${logContext} Secret key mismatch. Wallet: ${walletAddress}, Derived: ${derivedPublicKey}`);
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Secret key does not match wallet address',
+            errorCode: 'SECRET_KEY_MISMATCH',
+            retryable: false,
+            details:
+              'The provided encrypted secret key does not belong to the specified wallet address. Please ensure the secret key matches the wallet address.',
+          },
+          400
+        );
+      }
+      logger.debug(`${logContext} Secret key validated - matches wallet address`);
+      return secretKey;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      if (
+        error instanceof Error &&
+        (error.message.includes('Invalid secret key') || error.message.includes('invalid'))
+      ) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'Invalid secret key format',
+            errorCode: 'INVALID_SECRET_KEY_FORMAT',
+            retryable: false,
+            details: 'The decrypted secret key is not a valid Stellar secret key format.',
+          },
+          400
+        );
+      }
+
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Secret key validation failed',
+          errorCode: 'SECRET_KEY_VALIDATION_FAILED',
+          retryable: false,
+          details: 'Failed to validate the secret key. Please check that the encrypted secret key is correct.',
+        },
+        400
+      );
+    }
+  }
+
+  /**
+   * Warm up the Horizon server connection to avoid first-call failures
+   * This performs a real SDK operation to establish the HTTP connection and SDK state
+   * @private
+   */
+  private async warmupServerConnection(
+    server: Horizon.Server,
+    logContext: string,
+    forceRefresh: boolean = false
+  ): Promise<void> {
+    // If warmup is already in progress and not forcing refresh, wait for it
+    if (this.serverWarmupPromise && !forceRefresh) {
+      await this.serverWarmupPromise;
+      return;
+    }
+
+    // Create warmup promise and cache it
+    this.serverWarmupPromise = (async () => {
+      try {
+        // Perform a real SDK operation to warm up the connection
+        // Using server.root() which is a lightweight call that works on both testnet and mainnet
+        // This fully initializes the SDK's HTTP client and connection pool
+        // and establishes DNS, TCP, and TLS connections before the first real operation
+        try {
+          // Use the SDK's server object directly to establish connection
+          // This ensures the SDK's internal HTTP client is fully initialized
+          await server.root();
+          logger.debug(`${logContext} Server connection warmed up successfully via SDK root endpoint`);
+        } catch (warmupError: any) {
+          // Even if the warmup fails, the connection attempt itself helps initialize the SDK
+          // Don't throw - the actual operation will handle errors with retries
+          const errorMsg = warmupError instanceof Error ? warmupError.message : String(warmupError);
+          logger.debug(
+            `${logContext} Server warmup completed (SDK connection established, may have failed but that's ok): ${errorMsg}`
+          );
+        }
+      } catch (warmupError: any) {
+        // Log but don't throw - warmup failures shouldn't block operations
+        // The actual operation will handle errors with retries
+        const errorMsg = warmupError instanceof Error ? warmupError.message : String(warmupError);
+        logger.debug(`${logContext} Server warmup encountered error (non-blocking): ${errorMsg}`);
+      } finally {
+        // Clear the promise after a short delay to allow fresh warmup on next request
+        // This ensures we don't cache a bad connection state
+        setTimeout(() => {
+          this.serverWarmupPromise = null;
+        }, 3000); // Clear after 3 seconds (reduced from 5s for faster retry warmups)
+      }
+    })();
+
+    await this.serverWarmupPromise;
+  }
+
+  /**
+   * Load Stellar account with retry logic to handle first-call failures
+   * Handles transient errors like 404, 405, network timeouts that often occur on first call
+   * @private
+   */
+  private async loadAccountWithRetry(
+    server: Horizon.Server,
+    accountAddress: string,
+    accountName: string,
+    logContext: string,
+    maxRetries: number = 3,
+    warmupDelay: number = 200
+  ): Promise<any> {
+    let account: any = null;
+    let retries = maxRetries;
+    let attemptNumber = 0;
+    let lastError: any = null;
+
+    while (retries > 0 && !account) {
+      attemptNumber++;
+      try {
+        // Warm-up delay and connection warmup before each attempt
+        // This is critical for first-call failures - SDK needs time to initialize
+        if (attemptNumber === 1) {
+          // First attempt: longer delay + warmup
+          await new Promise((resolve) => setTimeout(resolve, warmupDelay));
+          await this.warmupServerConnection(server, logContext, false);
+        } else {
+          // Subsequent retries: shorter delay but still warmup to refresh connection
+          // Force refresh on retries to ensure we get a fresh connection attempt
+          await new Promise((resolve) => setTimeout(resolve, Math.max(warmupDelay / 2, 100)));
+          await this.warmupServerConnection(server, logContext, true);
+        }
+
+        account = await server.loadAccount(accountAddress);
+        logger.debug(`${logContext} ${accountName} account loaded successfully. Sequence: ${account.sequenceNumber()}`);
+        break;
+      } catch (loadError: any) {
+        lastError = loadError;
+        retries--;
+        const errorStatus = loadError?.response?.status;
+        const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
+        const errorString = JSON.stringify(loadError);
+
+        // Check if this is a transient error that should be retried
+        const isTransientError =
+          errorStatus === 404 ||
+          errorStatus === 405 ||
+          errorMsg.includes('404') ||
+          errorMsg.includes('405') ||
+          errorMsg.includes('Not Found') ||
+          errorMsg.includes('Method Not Allowed') ||
+          errorString.includes('404') ||
+          errorString.includes('405') ||
+          errorMsg.includes('ECONNRESET') ||
+          errorMsg.includes('ETIMEDOUT') ||
+          errorMsg.includes('timeout');
+
+        if (retries > 0 && isTransientError) {
+          logger.warn(
+            `${logContext} Failed to load ${accountName} account (attempt ${attemptNumber}/${maxRetries}). Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}. Retrying...`
+          );
+          // Exponential backoff with longer delays for better reliability
+          // For distributor account with 15 retries: 2000ms, 4000ms, 6000ms, etc. (more aggressive)
+          // For regular accounts with 3 retries: 1000ms, 2000ms
+          // Use longer delays for distributor account to handle persistent SDK issues
+          const waitTime =
+            accountName === 'Distributor'
+              ? attemptNumber * 2000 // 2s, 4s, 6s, 8s, etc. for distributor (very aggressive)
+              : attemptNumber * 1000; // 1s, 2s, 3s for regular accounts
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        } else {
+          // Non-transient error or last retry - throw immediately
+          throw loadError;
+        }
+      }
+    }
+
+    if (!account) {
+      // All retries exhausted - throw the last error with context
+      const errorStatus = lastError?.response?.status;
+      const errorDetail =
+        lastError?.response?.data?.detail || lastError?.response?.data?.title || lastError?.message || '';
+      const errorMsg = lastError instanceof Error ? lastError.message : String(lastError);
+
+      const error = new Error(
+        `Failed to load ${accountName} account (${accountAddress}) after ${maxRetries} retry attempts. Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}, Detail: ${errorDetail}`
+      );
+      // Preserve original error properties
+      (error as any).originalError = lastError;
+      (error as any).response = lastError?.response;
+      throw error;
+    }
+
+    return account;
+  }
+
+  /**
+   * Establish SYTEPLOT NFT trustline for buyer account
+   * @private
+   */
+  private async establishSytePlotTrustline(
+    server: Horizon.Server,
+    buyerWalletAddress: string,
+    secretKey: string,
+    sytePlotAsset: Asset,
+    trustLimit: string,
+    sponsorKeypair: Keypair,
+    sponsorPubKey: string,
+    logContext: string
+  ): Promise<void> {
+    logger.debug(`${logContext} Step 1: Adding trustline for SYTEPLOT NFT for ${buyerWalletAddress}`);
+
+    try {
+      // Load buyer account with retry logic
+      const account = await this.loadAccountWithRetry(server, buyerWalletAddress, 'Buyer', logContext);
+
+      // Check if trustline already exists
+      const trustlineExists = account.balances.some(
+        (balance: any) =>
+          balance.asset_type !== 'native' &&
+          balance.asset_code === sytePlotAsset.getCode() &&
+          balance.asset_issuer === sytePlotAsset.getIssuer()
+      );
+
+      if (trustlineExists) {
+        // Check if account already has the NFT
+        const nftBalance = account.balances.find(
+          (balance: any) =>
+            balance.asset_type !== 'native' &&
+            balance.asset_code === sytePlotAsset.getCode() &&
+            balance.asset_issuer === sytePlotAsset.getIssuer()
+        );
+
+        if (nftBalance && parseFloat(nftBalance.balance) >= parseFloat(trustLimit)) {
+          logger.info(`${logContext} Account already has SYTEPLOT NFT: ${buyerWalletAddress}`);
+          throw new HttpException(
+            {
+              status: 400,
+              success: false,
+              message: 'NFT already received',
+              errorCode: 'NFT_ALREADY_RECEIVED',
+              retryable: false,
+              details:
+                'The destination wallet already has the SYTEPLOT NFT. Each wallet can only hold one NFT per trustline. The trustline limit has been reached.',
+            },
+            400
+          );
+        }
+        logger.info(`${logContext} SYTEPLOT NFT trustline already exists for ${buyerWalletAddress}`);
+        return; // Trustline exists, no need to create it
+      }
+
+      // Build trustline transaction with sponsorship
+      const userKeypair = Keypair.fromSecret(secretKey);
+      const sponsorAccount = await this.loadAccountWithRetry(server, sponsorPubKey, 'Sponsor', logContext);
+
+      const trustlineTransaction = new TransactionBuilder(sponsorAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: this.params.networkPassphrase,
+      })
+        .addOperation(
+          Operation.beginSponsoringFutureReserves({
+            sponsoredId: buyerWalletAddress,
+          })
+        )
+        .addOperation(
+          Operation.changeTrust({
+            source: buyerWalletAddress,
+            asset: sytePlotAsset,
+            limit: trustLimit,
+          })
+        )
+        .addOperation(
+          Operation.endSponsoringFutureReserves({
+            source: buyerWalletAddress,
+          })
+        )
+        .setTimeout(180)
+        .build();
+
+      // Both sponsor and buyer must sign
+      trustlineTransaction.sign(sponsorKeypair);
+      trustlineTransaction.sign(userKeypair);
+      logger.debug(`${logContext} Trustline transaction built and signed by both sponsor and user`);
+
+      // Submit transaction directly - same pattern as generateAndCreateAccount() which works reliably
+      // Direct submission without retry logic matches the working pattern
+      await server.submitTransaction(trustlineTransaction);
+      logger.info(`${logContext} SYTEPLOT NFT trustline added successfully for ${buyerWalletAddress}`);
+    } catch (accountError) {
+      if (accountError instanceof HttpException) {
+        throw accountError;
+      }
+
+      if (accountError instanceof Error && accountError.message.includes('404')) {
+        logger.error(`${logContext} Account does not exist on Stellar network: ${buyerWalletAddress}`);
+        throw new HttpException(
+          {
+            status: 404,
+            success: false,
+            message: 'Account does not exist on Stellar network',
+            errorCode: 'ACCOUNT_NOT_FOUND',
+            retryable: false,
+            details:
+              'The wallet address does not exist on the Stellar network. Please ensure the account has been created on-chain before adding the trustline.',
+          },
+          404
+        );
+      }
+      throw accountError;
+    }
+  }
+
+  /**
+   * Send SYTEPLOT NFT payment after trustline is established
+   * Handles distributor account loading with retry logic and payment transaction submission
+   * @private
+   */
+  private async sendSytePlotNftPayment(
+    horizonUrl: string,
+    distributorAddress: string,
+    distributorKeypair: Keypair,
+    sponsorKeypair: Keypair,
+    WalletAddressFromMetadata: string,
+    sytePlotAsset: Asset,
+    SYTEPLOT_PAYMENT_AMOUNT: string,
+    UserId: number,
+    PlotId: number,
+    logContext: string
+  ): Promise<{
+    UserId: number;
+    PlotId: number;
+    TransactionHash: string;
+    metadataUrl: string;
+  }> {
+    // Wait a bit after trustline transaction to let network/propagation settle
+    // This helps prevent SDK connection issues that can occur immediately after transaction submission
+    logger.debug(`${logContext} Waiting 1 second after trustline transaction for network propagation...`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Create a FRESH server instance after trustline transaction
+    // The previous server instance may have corrupted connection state after transaction submission
+    // This is critical to avoid persistent 404 errors on distributor account loading
+    logger.debug(`${logContext} Creating fresh server instance for distributor account loading...`);
+    const freshServer = new Horizon.Server(horizonUrl);
+
+    // Load distributor account RIGHT BEFORE building transaction (with fresh sequence)
+    // This ensures we have the latest sequence number after trustline operations
+    // Use aggressive retry logic with 15 retries to ensure we never fail
+    logger.debug(`${logContext} Loading distributor account with fresh sequence for payment transaction`);
+
+    // Use aggressive retry logic with 15 retries to handle transient SDK issues after trustline operations
+    // Using fresh server instance to avoid connection state issues
+    const distributorAccount = await this.loadAccountWithRetry(
+      freshServer,
+      distributorAddress,
+      'Distributor',
+      logContext,
+      15, // maxRetries - 15 attempts total (1 initial + 14 retries) - very aggressive to prevent failures
+      500 // warmupDelay - longer delay to ensure SDK is fully ready
+    );
+    logger.debug(
+      `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
+    );
+
+    // Send SYTEPLOT NFT payment
+    logger.debug(`${logContext} Sending SYTEPLOT NFT payment from distributor to ${WalletAddressFromMetadata}`);
+
+    // Build and submit payment transaction with fee-bumping
+    const paymentTransaction = new TransactionBuilder(distributorAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: this.params.networkPassphrase,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: WalletAddressFromMetadata,
+          asset: sytePlotAsset,
+          amount: SYTEPLOT_PAYMENT_AMOUNT,
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    paymentTransaction.sign(distributorKeypair);
+
+    // Build fee-bump transaction: sponsor pays the transaction fee
+    const feeBumpTransaction = TransactionBuilder.buildFeeBumpTransaction(
+      sponsorKeypair,
+      (Number(BASE_FEE) * 2).toString(),
+      paymentTransaction,
+      this.params.networkPassphrase
+    );
+
+    feeBumpTransaction.sign(sponsorKeypair);
+
+    // Submit transaction using the fresh server instance
+    // This ensures clean connection state for transaction submission
+    const result = await freshServer.submitTransaction(feeBumpTransaction);
+
+    logger.info(`${logContext} SYTEPLOT NFT sent successfully. Hash: ${result.hash}`);
+
+    // Determine network for Stellar Expert URL
+    const isTestnet = this.params.networkPassphrase === Networks.TESTNET;
+    const explorerBaseUrl = isTestnet
+      ? 'https://stellar.expert/explorer/testnet'
+      : 'https://stellar.expert/explorer/public';
+    const metadataUrl = `${explorerBaseUrl}/tx/${result.hash}`;
+
+    // Return transaction details for tracking and verification
+    return {
+      UserId: UserId,
+      PlotId: PlotId,
+      TransactionHash: result.hash, // Stellar transaction hash for blockchain verification
+      metadataUrl: metadataUrl, // URL to view transaction on Stellar Expert explorer
+    };
+  }
+
+  /**
    * Sends a SYTEPLOT NFT to a buyer's wallet on the Stellar network.
    *
    * This function performs the following operations:
@@ -1750,589 +2296,70 @@ class StellarService {
   }> {
     const logContext = '[StellarService.sendSytePlotNft]';
 
-    // Validate environment variables are loaded
-    // Log critical env vars for debugging (without exposing secrets)
-    logger.debug(
-      `${logContext} Environment check - STELLAR_HORIZON_URL: ${process.env.STELLAR_HORIZON_URL ? 'SET' : 'NOT SET'}`
-    );
-    logger.debug(
-      `${logContext} Environment check - SYTE_DISTRIBUTOR_ADDRESS: ${process.env.SYTE_DISTRIBUTOR_ADDRESS ? 'SET' : 'NOT SET'}`
-    );
-    logger.debug(`${logContext} Environment check - NODE_ENV: ${process.env.NODE_ENV || 'NOT SET'}`);
+    // Step 1: Validate environment variables
+    this.validateSytePlotNftEnvironment(logContext);
 
-    // Validate environment variables
-    if (!process.env.STELLAR_HORIZON_URL) {
-      logger.error(`${logContext} Missing STELLAR_HORIZON_URL`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'STELLAR_HORIZON_URL not configured',
-          errorCode: 'CONFIG_MISSING_HORIZON_URL',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    if (!process.env.SYTE_DISTRIBUTOR_ADDRESS) {
-      logger.error(`${logContext} Missing SYTE_DISTRIBUTOR_ADDRESS`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'SYTE_DISTRIBUTOR_ADDRESS not configured',
-          errorCode: 'CONFIG_MISSING_DISTRIBUTOR_ADDRESS',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    if (!process.env.SYTE_DISTRIBUTOR_PRIVATE_KEY) {
-      logger.error(`${logContext} Missing SYTE_DISTRIBUTOR_PRIVATE_KEY`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'SYTE_DISTRIBUTOR_PRIVATE_KEY not configured',
-          errorCode: 'CONFIG_MISSING_DISTRIBUTOR_SECRET',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    if (!process.env.SPONSOR_PRIVATE_KEY) {
-      logger.error(`${logContext} Missing SPONSOR_PRIVATE_KEY`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'SPONSOR_PRIVATE_KEY not configured',
-          errorCode: 'CONFIG_MISSING_SPONSOR_SECRET',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    // Validate SYTEPLOT NFT configuration
-    if (!process.env.SYTEPLOT_ASSET_CODE) {
-      logger.error(`${logContext} Missing SYTEPLOT_ASSET_CODE`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'SYTEPLOT_ASSET_CODE not configured',
-          errorCode: 'CONFIG_MISSING_SYTEPLOT_ASSET_CODE',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    if (!process.env.SYTEPLOT_ISSUER_ADDRESS) {
-      logger.error(`${logContext} Missing SYTEPLOT_ISSUER_ADDRESS`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'SYTEPLOT_ISSUER_ADDRESS not configured',
-          errorCode: 'CONFIG_MISSING_SYTEPLOT_ISSUER_ADDRESS',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    // SYTEPLOT NFT configuration
-    const SYTEPLOT_ASSET_CODE = process.env.SYTEPLOT_ASSET_CODE;
-    const SYTEPLOT_ISSUER_ADDRESS = process.env.SYTEPLOT_ISSUER_ADDRESS;
+    // Step 2: Extract and validate configuration
+    const horizonUrl = process.env.STELLAR_HORIZON_URL!;
+    const SYTEPLOT_ASSET_CODE = process.env.SYTEPLOT_ASSET_CODE!;
+    const SYTEPLOT_ISSUER_ADDRESS = process.env.SYTEPLOT_ISSUER_ADDRESS!;
     const SYTEPLOT_PAYMENT_AMOUNT = '0.0000001'; // 1 NFT (minimum amount for NFT transfer)
     const SYTEPLOT_TRUST_LIMIT = '0.0000001'; // NFT trust limit (minimum required for NFT)
+    const sponsorPubKey = process.env.SPONSOR_PUBLIC_KEY!;
+    const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS!;
+    const sponsorKeypair = Keypair.fromSecret(process.env.SPONSOR_PRIVATE_KEY!);
+    const distributorKeypair = Keypair.fromSecret(process.env.SYTE_DISTRIBUTOR_PRIVATE_KEY!);
 
-    // Extract wallet credentials from Metadata
-    // Note: The wallet address and encrypted secret key are sourced from Metadata,
-    // not from function parameters, to maintain compatibility with the API structure
+    // Step 3: Extract and validate wallet credentials from Metadata
     const WalletAddressFromMetadata = Metadata.buyer_wallet_id;
     const encryptedSecretKeyFromMetadata = Metadata.buyer_wallet_secret;
 
-    // Validate wallet address from Metadata
-    if (!WalletAddressFromMetadata || typeof WalletAddressFromMetadata !== 'string') {
-      logger.error(`${logContext} Invalid buyer_wallet_id in Metadata: ${WalletAddressFromMetadata}`);
-      throw new HttpException(
-        {
-          status: 400,
-          success: false,
-          message: 'Invalid wallet address',
-          errorCode: 'INVALID_WALLET_ADDRESS',
-          retryable: false,
-          details: 'The provided wallet address is invalid or missing. Please provide a valid Stellar public key.',
-        },
-        400
-      );
-    }
+    this.validateWalletAddress(WalletAddressFromMetadata, logContext);
 
-    // Validate Stellar public key format
-    if (!StrKey.isValidEd25519PublicKey(WalletAddressFromMetadata)) {
-      logger.error(`${logContext} Invalid Stellar public key format: ${WalletAddressFromMetadata}`);
-      throw new HttpException(
-        {
-          status: 400,
-          success: false,
-          message: 'Invalid wallet address format',
-          errorCode: 'INVALID_WALLET_ADDRESS_FORMAT',
-          retryable: false,
-          details: 'The wallet address must be a valid Stellar public key (starts with G and is 56 characters long).',
-        },
-        400
-      );
-    }
-
-    // Initialize Stellar Horizon server connection
-    const horizonUrl = process.env.STELLAR_HORIZON_URL;
-    if (!horizonUrl) {
-      logger.error(`${logContext} STELLAR_HORIZON_URL is not set in environment variables`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'STELLAR_HORIZON_URL not configured',
-          errorCode: 'CONFIG_MISSING_HORIZON_URL',
-          retryable: false,
-          details:
-            'STELLAR_HORIZON_URL environment variable is not set. Please check your .env file or deployment environment variables.',
-        },
-        500
-      );
-    }
-
+    // Step 4: Initialize Stellar Horizon server
+    // Use the exact same pattern as generateAndCreateAccount() and sendSyteTokens()
     const server = new Horizon.Server(horizonUrl);
     logger.debug(`${logContext} Created Horizon server with URL: ${server.serverURL}`);
 
-    // Verify the server URL matches what we expect
-    if (server.serverURL !== horizonUrl) {
-      logger.warn(`${logContext} Horizon server URL mismatch! Expected: ${horizonUrl}, Actual: ${server.serverURL}`);
-    }
-
-    // Get sponsor public key for fee sponsorship operations
-    const sponsorPubKey = process.env.SPONSOR_PUBLIC_KEY;
-    if (!sponsorPubKey) {
-      logger.error(`${logContext} Missing SPONSOR_PUBLIC_KEY`);
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'SPONSOR_PUBLIC_KEY not configured',
-          errorCode: 'CONFIG_MISSING_SPONSOR_KEY',
-          retryable: false,
-          details: 'Server configuration error. Please contact support.',
-        },
-        500
-      );
-    }
-
-    // Initialize keypairs for signing transactions
-    // Sponsor keypair: Used to sponsor transaction fees and reserves
-    // Distributor keypair: Used to send NFT payments from the distributor account
-    const sponsorKeypair = Keypair.fromSecret(process.env.SPONSOR_PRIVATE_KEY);
-    const distributorKeypair = Keypair.fromSecret(process.env.SYTE_DISTRIBUTOR_PRIVATE_KEY);
-
-    // Validate encrypted secret key from Metadata
-    if (!encryptedSecretKeyFromMetadata) {
-      throw new HttpException(
-        {
-          status: 400,
-          success: false,
-          message: 'Encrypted secret key is required',
-          errorCode: 'MISSING_ENCRYPTED_SECRET_KEY',
-          retryable: false,
-          details: 'Encrypted secret key must be provided in Metadata.buyer_wallet_secret.',
-        },
-        400
-      );
-    }
-
-    // Create SYTEPLOT asset object for Stellar operations
+    // Step 5: Create SYTEPLOT asset object
+    // Step 6: Create SYTEPLOT asset object
     const sytePlotAsset = new Asset(SYTEPLOT_ASSET_CODE, SYTEPLOT_ISSUER_ADDRESS);
 
-    // Decrypt the buyer's encrypted secret key from Metadata
-    // This is required to sign the trustline transaction on behalf of the buyer
-    let secretKey: string;
-    try {
-      secretKey = await this.encryptionService.decryptSecretKey(encryptedSecretKeyFromMetadata);
-      logger.debug(`${logContext} Secret key decrypted for wallet ${WalletAddressFromMetadata}`);
-    } catch (error) {
-      logger.error(`${logContext} Failed to decrypt secret key: ${error instanceof Error ? error.message : error}`);
-
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      throw new HttpException(
-        {
-          status: 500,
-          success: false,
-          message: 'Failed to decrypt secret key',
-          errorCode: 'SECRET_KEY_DECRYPTION_FAILED',
-          retryable: false,
-          details:
-            'An error occurred while decrypting the secret key. Make sure the encrypted secret key is the one provided during account creation',
-        },
-        500
-      );
-    }
-
-    // Validate that the decrypted secret key matches the provided wallet address
-    // This ensures the secret key belongs to the correct wallet before proceeding
-    try {
-      const keypair = Keypair.fromSecret(secretKey);
-      const derivedPublicKey = keypair.publicKey();
-
-      if (derivedPublicKey !== WalletAddressFromMetadata) {
-        logger.error(
-          `${logContext} Secret key mismatch. Wallet: ${WalletAddressFromMetadata}, Derived: ${derivedPublicKey}`
-        );
-        throw new HttpException(
-          {
-            status: 400,
-            success: false,
-            message: 'Secret key does not match wallet address',
-            errorCode: 'SECRET_KEY_MISMATCH',
-            retryable: false,
-            details:
-              'The provided encrypted secret key does not belong to the specified wallet address. Please ensure the secret key matches the wallet address.',
-          },
-          400
-        );
-      }
-      logger.debug(`${logContext} Secret key validated - matches wallet address`);
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      // Handle invalid secret key format
-      if (
-        error instanceof Error &&
-        (error.message.includes('Invalid secret key') || error.message.includes('invalid'))
-      ) {
-        throw new HttpException(
-          {
-            status: 400,
-            success: false,
-            message: 'Invalid secret key format',
-            errorCode: 'INVALID_SECRET_KEY_FORMAT',
-            retryable: false,
-            details: 'The decrypted secret key is not a valid Stellar secret key format.',
-          },
-          400
-        );
-      }
-
-      throw new HttpException(
-        {
-          status: 400,
-          success: false,
-          message: 'Secret key validation failed',
-          errorCode: 'SECRET_KEY_VALIDATION_FAILED',
-          retryable: false,
-          details: 'Failed to validate the secret key. Please check that the encrypted secret key is correct.',
-        },
-        400
-      );
-    }
+    // Step 7: Decrypt and validate secret key
+    const secretKey = await this.decryptAndValidateSecretKey(
+      encryptedSecretKeyFromMetadata,
+      WalletAddressFromMetadata,
+      logContext
+    );
 
     try {
-      /**
-       * Step 1: Establish trustline for SYTEPLOT NFT
-       *
-       * Before a wallet can receive an asset on Stellar, it must establish a trustline.
-       * This operation uses sponsorship to pay for the trustline reserves, so the buyer
-       * doesn't need to have XLM in their account. Both the sponsor and buyer must sign.
-       */
-      logger.debug(`${logContext} Step 1: Adding trustline for SYTEPLOT NFT for ${WalletAddressFromMetadata}`);
-
-      // Check if trustline already exists and if account already has the NFT
-      try {
-        const account = await server.loadAccount(WalletAddressFromMetadata);
-        const trustlineExists = account.balances.some(
-          (balance: any) =>
-            balance.asset_type !== 'native' &&
-            balance.asset_code === SYTEPLOT_ASSET_CODE &&
-            balance.asset_issuer === SYTEPLOT_ISSUER_ADDRESS
-        );
-
-        if (trustlineExists) {
-          // Check if account already has the NFT (balance equals the limit)
-          const nftBalance = account.balances.find(
-            (balance: any) =>
-              balance.asset_type !== 'native' &&
-              balance.asset_code === SYTEPLOT_ASSET_CODE &&
-              balance.asset_issuer === SYTEPLOT_ISSUER_ADDRESS
-          );
-
-          if (nftBalance && parseFloat(nftBalance.balance) >= parseFloat(SYTEPLOT_TRUST_LIMIT)) {
-            logger.info(`${logContext} Account already has SYTEPLOT NFT: ${WalletAddressFromMetadata}`);
-            throw new HttpException(
-              {
-                status: 400,
-                success: false,
-                message: 'NFT already received',
-                errorCode: 'NFT_ALREADY_RECEIVED',
-                retryable: false,
-                details:
-                  'The destination wallet already has the SYTEPLOT NFT. Each wallet can only hold one NFT per trustline. The trustline limit has been reached.',
-              },
-              400
-            );
-          }
-          logger.info(`${logContext} SYTEPLOT NFT trustline already exists for ${WalletAddressFromMetadata}`);
-        } else {
-          // Build trustline transaction with sponsorship
-          // The sponsor pays for reserves, but the buyer must sign to authorize the trustline
-          const userKeypair = Keypair.fromSecret(secretKey);
-          const sourceAccount = await server.loadAccount(sponsorPubKey);
-          const trustlineTransaction = new TransactionBuilder(sourceAccount, {
-            fee: BASE_FEE,
-            networkPassphrase: this.params.networkPassphrase,
-          })
-            .addOperation(
-              Operation.beginSponsoringFutureReserves({
-                sponsoredId: WalletAddressFromMetadata,
-              })
-            )
-            .addOperation(
-              Operation.changeTrust({
-                source: WalletAddressFromMetadata,
-                asset: sytePlotAsset,
-                limit: SYTEPLOT_TRUST_LIMIT,
-              })
-            )
-            .addOperation(
-              Operation.endSponsoringFutureReserves({
-                source: WalletAddressFromMetadata,
-              })
-            )
-            .setTimeout(180)
-            .build();
-
-          // Both sponsor and buyer must sign: sponsor for fee sponsorship, buyer for trustline authorization
-          trustlineTransaction.sign(sponsorKeypair);
-          trustlineTransaction.sign(userKeypair);
-          logger.debug(`${logContext} Trustline transaction built and signed by both sponsor and user`);
-
-          await server.submitTransaction(trustlineTransaction);
-          logger.info(`${logContext} SYTEPLOT NFT trustline added successfully for ${WalletAddressFromMetadata}`);
-        }
-      } catch (accountError) {
-        // If account doesn't exist, we'll let the transaction fail with a more specific error
-        if (accountError instanceof Error && accountError.message.includes('404')) {
-          logger.error(`${logContext} Account does not exist on Stellar network: ${WalletAddressFromMetadata}`);
-          throw new HttpException(
-            {
-              status: 404,
-              success: false,
-              message: 'Account does not exist on Stellar network',
-              errorCode: 'ACCOUNT_NOT_FOUND',
-              retryable: false,
-              details:
-                'The wallet address does not exist on the Stellar network. Please ensure the account has been created on-chain before adding the trustline.',
-            },
-            404
-          );
-        }
-        logger.debug(
-          `${logContext} Could not check account status: ${accountError instanceof Error ? accountError.message : accountError}`
-        );
-        // Continue to try adding trustline even if check failed
-      }
-
-      /**
-       * Step 2: Send SYTEPLOT NFT payment from distributor to buyer
-       *
-       * The distributor account sends the NFT to the buyer's wallet.
-       * The transaction uses fee-bumping so the sponsor pays the transaction fee,
-       * allowing the operation to proceed even if the distributor has minimal XLM.
-       */
-      logger.debug(
-        `${logContext} Step 2: Sending SYTEPLOT NFT payment from distributor to ${WalletAddressFromMetadata}`
-      );
-
-      // Load distributor account for the payment transaction
-      let distributorAccount;
-      try {
-        const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS;
-        const horizonUrl = process.env.STELLAR_HORIZON_URL;
-
-        logger.debug(`${logContext} Attempting to load distributor account: ${distributorAddress}`);
-        logger.debug(`${logContext} Using Horizon URL: ${horizonUrl}`);
-        // server.serverURL might be a URI object, convert to string for logging
-        const serverUrlString = typeof server.serverURL === 'string' ? server.serverURL : String(server.serverURL);
-        logger.debug(`${logContext} Server URL: ${serverUrlString}`);
-
-        if (!distributorAddress) {
-          throw new HttpException(
-            {
-              status: 500,
-              success: false,
-              message: 'Distributor address not configured',
-              errorCode: 'DISTRIBUTOR_ADDRESS_NOT_CONFIGURED',
-              retryable: false,
-              details: 'SYTE_DISTRIBUTOR_ADDRESS environment variable is not set.',
-            },
-            500
-          );
-        }
-
-        // Try to load the account with retry logic
-        let retries = 3;
-        let lastError: any = null;
-
-        while (retries > 0) {
-          try {
-            // Always create a fresh server instance to avoid any state issues
-            const freshServer = new Horizon.Server(horizonUrl);
-            logger.debug(
-              `${logContext} Attempting to load account (attempt ${4 - retries}/3) with server URL: ${freshServer.serverURL}`
-            );
-
-            distributorAccount = await freshServer.loadAccount(distributorAddress);
-
-            logger.debug(
-              `${logContext} Distributor account loaded successfully. Sequence: ${distributorAccount.sequenceNumber()}`
-            );
-            break; // Success, exit retry loop
-          } catch (loadError: any) {
-            lastError = loadError;
-            retries--;
-
-            const errorMsg = loadError instanceof Error ? loadError.message : String(loadError);
-            const errorStatus = loadError?.response?.status;
-            const errorDetail = loadError?.response?.data?.detail || loadError?.response?.data?.title || '';
-
-            // During retries: only log warnings, don't throw errors
-            if (retries > 0) {
-              logger.warn(
-                `${logContext} Failed to load distributor account (attempt ${4 - retries}/3). Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}, Detail: ${errorDetail}. Retrying...`
-              );
-              const waitTime = (4 - retries) * 1000; // 1s, 2s, 3s
-              logger.warn(`${logContext} Retrying in ${waitTime}ms...`);
-              await new Promise((resolve) => setTimeout(resolve, waitTime));
-            } else {
-              // Last attempt failed - log error but don't throw yet (will throw after final verification)
-              logger.error(
-                `${logContext} Failed to load distributor account on final attempt (3/3). Error: ${errorMsg}, Status: ${errorStatus || 'N/A'}, Detail: ${errorDetail}`
-              );
-            }
-          }
-        }
-
-        // Only throw error after ALL retries are exhausted
-        // Don't throw during retries - only throw after final attempt fails
-        if (!distributorAccount) {
-          // All retries exhausted - now we can throw the error
-          const errorStatus = lastError?.response?.status;
-          const errorDetail =
-            lastError?.response?.data?.detail || lastError?.response?.data?.title || lastError?.message || '';
-
-          throw new HttpException(
-            {
-              status: 500,
-              success: false,
-              message: 'Distributor account not found on Stellar network',
-              errorCode: 'DISTRIBUTOR_ACCOUNT_NOT_FOUND',
-              retryable: false,
-              details: `Failed to load distributor account (${distributorAddress}) after ${3} retry attempts. Horizon URL: ${horizonUrl}. Error: ${errorDetail}. Please verify: 1) The account exists on the correct network (testnet/mainnet), 2) The STELLAR_HORIZON_URL matches the network where the account was created, 3) There are no network connectivity issues.`,
-            },
-            500
-          );
-        }
-      } catch (accountError) {
-        // Log the actual error and Horizon URL for debugging
-        const horizonUrl = process.env.STELLAR_HORIZON_URL || 'not set';
-        const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS || 'not set';
-        const errorMessage = accountError instanceof Error ? accountError.message : String(accountError);
-        const errorString = JSON.stringify(accountError);
-
-        logger.error(
-          `${logContext} Failed to load distributor account. Address: ${distributorAddress}, Horizon URL: ${horizonUrl}, Server URL: ${server.serverURL}, Error: ${errorMessage}, Full Error: ${errorString.substring(0, 500)}`
-        );
-
-        if (accountError instanceof Error && accountError.message.includes('Not Found')) {
-          logger.error(
-            `${logContext} Distributor account does not exist on Stellar network: ${process.env.SYTE_DISTRIBUTOR_ADDRESS}`
-          );
-          throw new HttpException(
-            {
-              status: 500,
-              success: false,
-              message: 'Distributor account not found on Stellar network',
-              errorCode: 'DISTRIBUTOR_ACCOUNT_NOT_FOUND',
-              retryable: false,
-              details: `The distributor account (${process.env.SYTE_DISTRIBUTOR_ADDRESS}) does not exist on the Stellar network at ${horizonUrl}. Please ensure the account has been created and funded on the correct network (testnet/mainnet).`,
-            },
-            500
-          );
-        }
-        throw accountError;
-      }
-
-      // Build payment transaction: distributor sends NFT to buyer
-      const paymentTransaction = new TransactionBuilder(distributorAccount, {
-        fee: BASE_FEE,
-        networkPassphrase: this.params.networkPassphrase,
-      })
-        .addOperation(
-          Operation.payment({
-            destination: WalletAddressFromMetadata,
-            asset: sytePlotAsset,
-            amount: SYTEPLOT_PAYMENT_AMOUNT,
-          })
-        )
-        .setTimeout(180)
-        .build();
-
-      // Sign with distributor keypair (the sender)
-      paymentTransaction.sign(distributorKeypair);
-
-      // Build fee-bump transaction: sponsor pays the transaction fee
-      // This allows the transaction to succeed even if distributor has minimal XLM balance
-      const feeBumpTransaction = TransactionBuilder.buildFeeBumpTransaction(
+      // Step 8: Establish trustline for SYTEPLOT NFT (if needed)
+      await this.establishSytePlotTrustline(
+        server,
+        WalletAddressFromMetadata,
+        secretKey,
+        sytePlotAsset,
+        SYTEPLOT_TRUST_LIMIT,
         sponsorKeypair,
-        (Number(BASE_FEE) * 2).toString(), // Fee-bump requires double the base fee
-        paymentTransaction,
-        this.params.networkPassphrase
+        sponsorPubKey,
+        logContext
       );
 
-      // Sign the fee-bump transaction with sponsor keypair
-      feeBumpTransaction.sign(sponsorKeypair);
-
-      // Submit the fee-bumped transaction to the Stellar network
-      const result = await server.submitTransaction(feeBumpTransaction);
-      logger.info(`${logContext} SYTEPLOT NFT sent successfully. Hash: ${result.hash}`);
-
-      // Determine network for Stellar Expert URL
-      const isTestnet = this.params.networkPassphrase === Networks.TESTNET;
-      const explorerBaseUrl = isTestnet
-        ? 'https://stellar.expert/explorer/testnet'
-        : 'https://stellar.expert/explorer/public';
-      const metadataUrl = `${explorerBaseUrl}/tx/${result.hash}`;
-
-      // Return transaction details for tracking and verification
-      return {
-        UserId: UserId,
-        PlotId: PlotId,
-        TransactionHash: result.hash, // Stellar transaction hash for blockchain verification
-        metadataUrl: metadataUrl, // URL to view transaction on Stellar Expert explorer
-      };
+      // Step 9: Send SYTEPLOT NFT payment using dedicated method
+      // This method handles distributor account loading with retry logic and payment submission
+      // Pass horizonUrl instead of server to allow creating a fresh server instance
+      return await this.sendSytePlotNftPayment(
+        horizonUrl,
+        distributorAddress,
+        distributorKeypair,
+        sponsorKeypair,
+        WalletAddressFromMetadata,
+        sytePlotAsset,
+        SYTEPLOT_PAYMENT_AMOUNT,
+        UserId,
+        PlotId,
+        logContext
+      );
     } catch (error) {
       /**
        * Error Handling: Comprehensive error handling for Stellar transaction failures
@@ -2345,6 +2372,33 @@ class StellarService {
       // Re-throw HttpException errors as-is (they're already properly formatted)
       if (error instanceof HttpException) {
         throw error;
+      }
+
+      // Handle 405 (Method Not Allowed) - often a transient SDK/network issue on first call
+      const httpErrorStatus = (error as any)?.response?.status;
+      const httpErrorMessage = error instanceof Error ? error.message : String(error);
+      const httpErrorString = JSON.stringify(error);
+
+      if (
+        httpErrorStatus === 405 ||
+        httpErrorMessage.includes('405') ||
+        httpErrorMessage.includes('Method Not Allowed') ||
+        httpErrorString.includes('405') ||
+        httpErrorMessage.includes('status code 405')
+      ) {
+        throw new HttpException(
+          {
+            status: 500,
+            success: false,
+            message: 'Transaction submission failed',
+            errorCode: 'HTTP_METHOD_ERROR',
+            retryable: true,
+            retryAfter: 2,
+            details:
+              'The transaction submission failed with HTTP 405 (Method Not Allowed). This is often a transient SDK or network issue that occurs on the first call. Please retry the request. The second call typically succeeds as the SDK connection is then properly initialized.',
+          },
+          500
+        );
       }
 
       // Handle invalid destination error
@@ -2372,13 +2426,37 @@ class StellarService {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorString = JSON.stringify(error);
 
-      // Handle "Not Found" errors (could be account, asset issuer, or other resources)
+      // Handle "Not Found" errors (could be account, asset issuer, transaction submission, or other resources)
       if (
         errorMessage.includes('Not Found') ||
         errorMessage.includes('404') ||
         errorString.includes('Not Found') ||
         errorString.includes('404')
       ) {
+        // Check if it's from transaction submission (after retries exhausted)
+        // This usually indicates sequence number issue or invalid transaction, not missing resource
+        if (
+          errorMessage.includes('Failed to submit') ||
+          errorMessage.includes('transaction') ||
+          errorMessage.includes('Payment submission') ||
+          errorString.includes('transaction') ||
+          errorString.includes('submit')
+        ) {
+          throw new HttpException(
+            {
+              status: 500,
+              success: false,
+              message: 'Transaction submission failed',
+              errorCode: 'TRANSACTION_SUBMISSION_FAILED',
+              retryable: true,
+              retryAfter: 3,
+              details:
+                'Transaction submission failed with 404 after all retries. This may indicate a sequence number mismatch or invalid transaction. The distributor account was reloaded with the latest sequence number before building the transaction. Please retry the request.',
+            },
+            500
+          );
+        }
+
         // Check if it's the asset issuer
         if (
           errorMessage.includes('asset') ||
@@ -2399,16 +2477,17 @@ class StellarService {
           );
         }
 
-        // Generic "Not Found" error
+        // Generic "Not Found" error (for account loading, etc.)
         throw new HttpException(
           {
             status: 404,
             success: false,
             message: 'Resource not found on Stellar network',
             errorCode: 'STELLAR_RESOURCE_NOT_FOUND',
-            retryable: false,
+            retryable: true,
+            retryAfter: 2,
             details:
-              'A required resource (account, asset, or issuer) was not found on the Stellar network. Please verify all addresses are correct and accounts exist on-chain.',
+              'A required resource (account, asset, or issuer) was not found on the Stellar network. This error often occurs on the first API call due to SDK initialization issues. Please retry the request.',
           },
           404
         );
