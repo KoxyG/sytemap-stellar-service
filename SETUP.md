@@ -22,6 +22,7 @@ Before you begin, ensure you have the following installed on your system:
 ### Required Software
 
 1. **Node.js** (version 18.x or higher)
+
    ```bash
    node --version  # Should show v18.x.x or higher
    ```
@@ -43,15 +44,16 @@ Before you begin, ensure you have the following installed on your system:
 ## Step 1: Install Dependencies
 
 1. **Navigate to the project directory**
+
    ```bash
    cd SyteMap-Stellar-Service
    ```
 
 2. **Install all dependencies**
+
    ```bash
    npm install
    ```
-
 
 3. **Important Security Notes:**
    - ⚠️ **Never commit the `.env` file to version control**
@@ -66,16 +68,19 @@ Before you begin, ensure you have the following installed on your system:
 The encryption key is used to encrypt Stellar secret keys before storing them. It must be exactly 32 bytes (256 bits).
 
 1. **Generate the encryption key**
+
    ```bash
    npm run generate:key
    ```
 
    This will output a 32-byte encryption key. Example output:
+
    ```
    Generated Encryption Key: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
    ```
 
 2. **Copy the generated key** and add it to your `.env` file:
+
    ```bash
    ENCRYPTION_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
    ```
@@ -89,11 +94,13 @@ The encryption key is used to encrypt Stellar secret keys before storing them. I
 ## Step 4: Build the Project
 
 1. **Build the TypeScript code to JavaScript**
+
    ```bash
    npm run build
    ```
 
    This command will:
+
    - Generate Swagger documentation
    - Compile TypeScript files to JavaScript in the `dist/` directory
    - Copy public assets and Swagger JSON files
@@ -111,6 +118,7 @@ npm run dev
 ```
 
 The server will:
+
 - Start with nodemon (auto-restarts on file changes)
 - Run TypeScript files directly (no build needed)
 - Show detailed error messages
@@ -140,6 +148,7 @@ You should receive a response indicating the API is running.
 ### 2. Access Swagger Documentation
 
 Open in your browser:
+
 ```
 http://localhost:3000/api-docs
 ```
@@ -174,6 +183,7 @@ curl -X POST http://localhost:3000/api/v1/create_stellar_account \
 **Error:** `EADDRINUSE: address already in use :::3000`
 
 **Solution:**
+
 ```bash
 # Find process using port 3000
 lsof -ti:3000
@@ -190,6 +200,7 @@ APP_PORT=3001
 **Error:** `❌ Missing required environment variables`
 
 **Solution:**
+
 - Check `.env` file exists in project root
 - Verify all required variables are set (see Step 3)
 - Required variables: `STELLAR_HORIZON_URL`, `SYTE_DISTRIBUTOR_ADDRESS`, `SPONSOR_PUBLIC_KEY`, `SPONSOR_PRIVATE_KEY`
@@ -199,6 +210,7 @@ APP_PORT=3001
 **Error:** Encryption/decryption fails
 
 **Solutions:**
+
 - Ensure `ENCRYPTION_KEY` is exactly 32 bytes (64 hex characters)
 - Regenerate key: `npm run generate:key`
 - Update `.env` with the new key
@@ -209,6 +221,7 @@ APP_PORT=3001
 **Error:** `Cannot find module '...'`
 
 **Solutions:**
+
 - Delete `node_modules` and `package-lock.json`
 - Run `npm install` again
 - Check `package.json` for correct dependencies
@@ -218,6 +231,7 @@ APP_PORT=3001
 **Error:** `Swagger file not found`
 
 **Solutions:**
+
 - Run `npm run build` to generate Swagger docs
 - Check `dist/swagger/documentation.swagger.json` exists
 - Run `npm run swagger` manually if needed
@@ -227,6 +241,7 @@ APP_PORT=3001
 **Error:** Cannot connect to Stellar Horizon
 
 **Solutions:**
+
 - Check internet connection
 - Verify `STELLAR_HORIZON_URL` is correct
 - For testnet: `https://horizon-testnet.stellar.org`
@@ -238,8 +253,8 @@ APP_PORT=3001
 **Error:** Transaction fails due to insufficient funds
 
 **Solutions:**
+
 - Fund your sponsor account with XLM
 - For testnet: Use [Stellar Laboratory](https://laboratory.stellar.org/#account-creator?network=test)
 - For mainnet: Purchase XLM from an exchange
 - Ensure account has enough XLM for fees and account creation
-

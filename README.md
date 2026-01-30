@@ -2,7 +2,6 @@
 
 A production-ready Node.js/TypeScript backend service for interacting with the Stellar blockchain. This service provides comprehensive APIs for managing Stellar accounts, sending SYTE tokens, distributing SYTEPLOT NFTs, and managing trustlines.
 
-
 ## ✨ Features
 
 ### Core Functionality
@@ -40,7 +39,7 @@ Quick start:
 git clone <repository-url>
 cd SyteMap-Stellar-Service
 npm install
-npm run generate:key
+npm run generate:key // only run if you want to switch to mainnet
 npm run build
 npm run dev
 ```
@@ -50,10 +49,12 @@ npm run dev
 ### Network Configuration
 
 **For Testnet (Development):**
+
 - Set `NODE_ENV=development`
 - Set `STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org`
 
 **For Mainnet (Production):**
+
 - Set `NODE_ENV=production`
 - Set `STELLAR_HORIZON_URL=https://horizon.stellar.org`
 
@@ -158,8 +159,6 @@ npm run test:coverage    # Generate test coverage
 # Documentation
 npm run swagger          # Generate Swagger documentation
 ```
-
-
 
 ### Security Checklist
 
