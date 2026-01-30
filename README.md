@@ -40,7 +40,7 @@ git clone <repository-url>
 cd SyteMap-Stellar-Service
 npm install
 npm run generate:key // only run if you want to switch to mainnet
-npm run build
+npm run build  // Ignore the current warnings in the scripts.
 npm run dev
 ```
 
