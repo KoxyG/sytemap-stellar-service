@@ -2106,7 +2106,98 @@ class StellarService {
   }
 
   /**
-   * Establish SYTEPLOT NFT trustline for buyer account
+   * Fail fast if the distributor cannot cover one SYTEPLOT payment.
+   * @private
+   */
+  private async assertDistributorHasSytePlotForPayment(
+    server: Horizon.Server,
+    distributorAddress: string,
+    sytePlotAsset: Asset,
+    minimumAmount: string,
+    logContext: string
+  ): Promise<void> {
+    const account = await this.loadAccountWithRetry(server, distributorAddress, 'Distributor', logContext);
+    const line = account.balances.find(
+      (b: StellarBalance) =>
+        b.asset_type !== 'native' &&
+        b.asset_code === sytePlotAsset.getCode() &&
+        b.asset_issuer === sytePlotAsset.getIssuer()
+    );
+    const creditLine = line as StellarBalance | undefined;
+    const bal = creditLine ? parseFloat(creditLine.balance) : 0;
+    const req = parseFloat(minimumAmount);
+    if (Number.isNaN(req) || req <= 0) {
+      return;
+    }
+    if (Number.isNaN(bal) || bal + 1e-15 < req) {
+      logger.error(`${logContext} Distributor SYTEPLOT balance insufficient: ${bal} < ${minimumAmount}`);
+      throw new HttpException(
+        {
+          status: 400,
+          success: false,
+          message: 'Distributor SYTEPLOT balance too low',
+          errorCode: 'DISTRIBUTOR_INSUFFICIENT_SYTEPLOT',
+          retryable: false,
+          details: `Distributor (${distributorAddress}) has ${Number.isNaN(bal) ? 0 : bal} SYTEPLOT but each send requires ${minimumAmount}. Top up from the issuer account (e.g. scripts/SYTEPLOT NFT/send-payment.ts with optional amount).`,
+        },
+        400
+      );
+    }
+  }
+
+  /**
+   * Sponsored changeTrust for SYTEPLOT (creates trustline or raises its limit).
+   * @private
+   */
+  private async submitSponsoredSytePlotChangeTrust(
+    server: Horizon.Server,
+    buyerWalletAddress: string,
+    secretKey: string,
+    sytePlotAsset: Asset,
+    targetLimit: string,
+    sponsorKeypair: Keypair,
+    sponsorPubKey: string,
+    logContext: string,
+    successLog: string
+  ): Promise<void> {
+    const userKeypair = Keypair.fromSecret(secretKey);
+    const sponsorAccount = await this.loadAccountWithRetry(server, sponsorPubKey, 'Sponsor', logContext);
+
+    const trustlineTransaction = new TransactionBuilder(sponsorAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: this.params.networkPassphrase,
+    })
+      .addOperation(
+        Operation.beginSponsoringFutureReserves({
+          sponsoredId: buyerWalletAddress,
+        })
+      )
+      .addOperation(
+        Operation.changeTrust({
+          source: buyerWalletAddress,
+          asset: sytePlotAsset,
+          limit: targetLimit,
+        })
+      )
+      .addOperation(
+        Operation.endSponsoringFutureReserves({
+          source: buyerWalletAddress,
+        })
+      )
+      .setTimeout(180)
+      .build();
+
+    trustlineTransaction.sign(sponsorKeypair);
+    trustlineTransaction.sign(userKeypair);
+    logger.debug(`${logContext} Sponsored changeTrust built and signed (limit ${targetLimit})`);
+
+    await server.submitTransaction(trustlineTransaction);
+    logger.info(`${logContext} ${successLog}`);
+  }
+
+  /**
+   * Ensure the buyer has a SYTEPLOT trustline with enough headroom for another payment.
+   * New lines use maxTrustLimit; existing lines are raised up to maxTrustLimit when full.
    * @private
    */
   private async establishSytePlotTrustline(
@@ -2114,90 +2205,125 @@ class StellarService {
     buyerWalletAddress: string,
     secretKey: string,
     sytePlotAsset: Asset,
-    trustLimit: string,
+    maxTrustLimit: string,
+    paymentAmount: string,
     sponsorKeypair: Keypair,
     sponsorPubKey: string,
     logContext: string
   ): Promise<void> {
-    logger.debug(`${logContext} Step 1: Adding trustline for SYTEPLOT NFT for ${buyerWalletAddress}`);
+    logger.debug(`${logContext} Ensuring SYTEPLOT trustline capacity for ${buyerWalletAddress}`);
+
+    const parsePositive = (label: string, value: string): number => {
+      const n = parseFloat(value);
+      if (Number.isNaN(n) || n <= 0) {
+        logger.error(`${logContext} Invalid ${label}: ${value}`);
+        throw new HttpException(
+          {
+            status: 500,
+            success: false,
+            message: 'Invalid SYTEPLOT trust configuration',
+            errorCode: 'CONFIG_INVALID_SYTEPLOT_TRUST_LIMIT',
+            retryable: false,
+            details: `${label} must be a positive number (check SYTEPLOT_TRUST_LIMIT and payment amount).`,
+          },
+          500
+        );
+      }
+      return n;
+    };
+
+    const maxL = parsePositive('SYTEPLOT_TRUST_LIMIT', maxTrustLimit);
+    const pay = parsePositive('SYTEPLOT payment amount', paymentAmount);
+    if (maxL < pay) {
+      logger.error(`${logContext} SYTEPLOT_TRUST_LIMIT (${maxTrustLimit}) is below one NFT payment (${paymentAmount})`);
+      throw new HttpException(
+        {
+          status: 500,
+          success: false,
+          message: 'Invalid SYTEPLOT trust configuration',
+          errorCode: 'CONFIG_INVALID_SYTEPLOT_TRUST_LIMIT',
+          retryable: false,
+          details: 'SYTEPLOT_TRUST_LIMIT must be at least the amount of one SYTEPLOT payment.',
+        },
+        500
+      );
+    }
 
     try {
-      // Load buyer account with retry logic
       const account = await this.loadAccountWithRetry(server, buyerWalletAddress, 'Buyer', logContext);
 
-      // Check if trustline already exists
-      const trustlineExists = account.balances.some(
+      const nftBalance = account.balances.find(
         (balance: StellarBalance) =>
           balance.asset_type !== 'native' &&
           balance.asset_code === sytePlotAsset.getCode() &&
           balance.asset_issuer === sytePlotAsset.getIssuer()
       );
 
-      if (trustlineExists) {
-        // Check if account already has the NFT
-        const nftBalance = account.balances.find(
-          (balance: StellarBalance) =>
-            balance.asset_type !== 'native' &&
-            balance.asset_code === sytePlotAsset.getCode() &&
-            balance.asset_issuer === sytePlotAsset.getIssuer()
+      if (!nftBalance) {
+        await this.submitSponsoredSytePlotChangeTrust(
+          server,
+          buyerWalletAddress,
+          secretKey,
+          sytePlotAsset,
+          maxTrustLimit,
+          sponsorKeypair,
+          sponsorPubKey,
+          logContext,
+          `SYTEPLOT trustline created for ${buyerWalletAddress} (limit ${maxTrustLimit})`
         );
-
-        if (nftBalance && parseFloat(nftBalance.balance) >= parseFloat(trustLimit)) {
-          logger.info(`${logContext} Account already has SYTEPLOT NFT: ${buyerWalletAddress}`);
-          throw new HttpException(
-            {
-              status: 400,
-              success: false,
-              message: 'NFT already received',
-              errorCode: 'NFT_ALREADY_RECEIVED',
-              retryable: false,
-              details:
-                'The destination wallet already has the SYTEPLOT NFT. Each wallet can only hold one NFT per trustline. The trustline limit has been reached.',
-            },
-            400
-          );
-        }
-        logger.info(`${logContext} SYTEPLOT NFT trustline already exists for ${buyerWalletAddress}`);
-        return; // Trustline exists, no need to create it
+        return;
       }
 
-      // Build trustline transaction with sponsorship
-      const userKeypair = Keypair.fromSecret(secretKey);
-      const sponsorAccount = await this.loadAccountWithRetry(server, sponsorPubKey, 'Sponsor', logContext);
+      const creditBalance = nftBalance as StellarBalance;
+      const balanceAmt = parseFloat(creditBalance.balance);
+      const lineLimit = parseFloat(creditBalance.limit ?? '0');
+      if (Number.isNaN(balanceAmt) || Number.isNaN(lineLimit)) {
+        logger.error(`${logContext} Unparseable SYTEPLOT balance/limit for ${buyerWalletAddress}`);
+        throw new HttpException(
+          {
+            status: 500,
+            success: false,
+            message: 'Invalid account balance data',
+            errorCode: 'STELLAR_BALANCE_PARSE_ERROR',
+            retryable: false,
+            details: 'Could not read SYTEPLOT trustline balance or limit from Horizon.',
+          },
+          500
+        );
+      }
 
-      const trustlineTransaction = new TransactionBuilder(sponsorAccount, {
-        fee: BASE_FEE,
-        networkPassphrase: this.params.networkPassphrase,
-      })
-        .addOperation(
-          Operation.beginSponsoringFutureReserves({
-            sponsoredId: buyerWalletAddress,
-          })
-        )
-        .addOperation(
-          Operation.changeTrust({
-            source: buyerWalletAddress,
-            asset: sytePlotAsset,
-            limit: trustLimit,
-          })
-        )
-        .addOperation(
-          Operation.endSponsoringFutureReserves({
-            source: buyerWalletAddress,
-          })
-        )
-        .setTimeout(180)
-        .build();
+      // Room for one more payment of size `pay` within the current line limit
+      if (balanceAmt + pay <= lineLimit + 1e-12) {
+        logger.info(`${logContext} SYTEPLOT trustline has capacity (${creditBalance.balance} / ${creditBalance.limit})`);
+        return;
+      }
 
-      // Both sponsor and buyer must sign
-      trustlineTransaction.sign(sponsorKeypair);
-      trustlineTransaction.sign(userKeypair);
-      logger.debug(`${logContext} Trustline transaction built and signed by both sponsor and user`);
+      // Line is full relative to current limit — raise toward configured max
+      if (lineLimit >= maxL - 1e-12) {
+        throw new HttpException(
+          {
+            status: 400,
+            success: false,
+            message: 'SYTEPLOT trust limit reached',
+            errorCode: 'SYTEPLOT_TRUST_LIMIT_REACHED',
+            retryable: false,
+            details: `This wallet cannot accept more SYTEPLOT without raising SYTEPLOT_TRUST_LIMIT (current max ${maxTrustLimit}).`,
+          },
+          400
+        );
+      }
 
-      // Submit transaction directly - same pattern as generateAndCreateAccount() which works reliably
-      // Direct submission without retry logic matches the working pattern
-      await server.submitTransaction(trustlineTransaction);
-      logger.info(`${logContext} SYTEPLOT NFT trustline added successfully for ${buyerWalletAddress}`);
+      await this.submitSponsoredSytePlotChangeTrust(
+        server,
+        buyerWalletAddress,
+        secretKey,
+        sytePlotAsset,
+        maxTrustLimit,
+        sponsorKeypair,
+        sponsorPubKey,
+        logContext,
+        `SYTEPLOT trust limit raised to ${maxTrustLimit} for ${buyerWalletAddress}`
+      );
     } catch (accountError) {
       if (accountError instanceof HttpException) {
         throw accountError;
@@ -2375,8 +2501,9 @@ class StellarService {
     const horizonUrl = process.env.STELLAR_HORIZON_URL!;
     const SYTEPLOT_ASSET_CODE = process.env.SYTEPLOT_ASSET_CODE!;
     const SYTEPLOT_ISSUER_ADDRESS = process.env.SYTEPLOT_ISSUER_ADDRESS!;
-    const SYTEPLOT_PAYMENT_AMOUNT = '0.0000001'; // 1 NFT (minimum amount for NFT transfer)
-    const SYTEPLOT_TRUST_LIMIT = '0.0000001'; // NFT trust limit (minimum required for NFT)
+    const SYTEPLOT_PAYMENT_AMOUNT = '1'; // one NFT per transfer on-chain
+    const rawTrustCap = process.env.SYTEPLOT_TRUST_LIMIT?.trim();
+    const SYTEPLOT_TRUST_LIMIT = rawTrustCap && rawTrustCap.length > 0 ? rawTrustCap : '1000000000';
     const sponsorPubKey = process.env.SPONSOR_PUBLIC_KEY!;
     const distributorAddress = process.env.SYTE_DISTRIBUTOR_ADDRESS!;
     const sponsorKeypair = Keypair.fromSecret(process.env.SPONSOR_PRIVATE_KEY!);
@@ -2393,9 +2520,15 @@ class StellarService {
     const server = new Horizon.Server(horizonUrl);
     logger.debug(`${logContext} Created Horizon server with URL: ${server.serverURL}`);
 
-    // Step 5: Create SYTEPLOT asset object
-    // Step 6: Create SYTEPLOT asset object
     const sytePlotAsset = new Asset(SYTEPLOT_ASSET_CODE, SYTEPLOT_ISSUER_ADDRESS);
+
+    await this.assertDistributorHasSytePlotForPayment(
+      server,
+      distributorAddress,
+      sytePlotAsset,
+      SYTEPLOT_PAYMENT_AMOUNT,
+      logContext
+    );
 
     // Step 7: Decrypt and validate secret key
     const secretKey = await this.decryptAndValidateSecretKey(
@@ -2412,6 +2545,7 @@ class StellarService {
         secretKey,
         sytePlotAsset,
         SYTEPLOT_TRUST_LIMIT,
+        SYTEPLOT_PAYMENT_AMOUNT,
         sponsorKeypair,
         sponsorPubKey,
         logContext
@@ -2568,7 +2702,7 @@ class StellarService {
         );
       }
 
-      // Handle case where trustline limit is full (account already has the NFT)
+      // Trustline balance would exceed limit (raise SYTEPLOT_TRUST_LIMIT or run changeTrust flow again)
       if (
         (operations && operations.includes('op_line_full')) ||
         errorMessage.includes('op_line_full') ||
@@ -2578,11 +2712,11 @@ class StellarService {
           {
             status: 400,
             success: false,
-            message: 'NFT already received',
-            errorCode: 'NFT_ALREADY_RECEIVED',
+            message: 'SYTEPLOT trustline full',
+            errorCode: 'SYTEPLOT_TRUST_LINE_FULL',
             retryable: false,
             details:
-              'The destination wallet already has the SYTEPLOT NFT. Each wallet can only hold one NFT per trustline. The trustline limit has been reached.',
+              'Payment would exceed the wallet SYTEPLOT trust limit. Increase SYTEPLOT_TRUST_LIMIT in server configuration or ensure trustline was raised before payment.',
           },
           400
         );

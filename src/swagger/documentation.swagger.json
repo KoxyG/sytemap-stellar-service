@@ -20,7 +20,9 @@
   "paths": {
     "/": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "API Health Check and Information",
         "description": "",
         "responses": {
@@ -120,7 +122,9 @@
     },
     "/welcome": {
       "get": {
-        "tags": ["Welcome"],
+        "tags": [
+          "Welcome"
+        ],
         "summary": "Welcome API Endpoint to start",
         "description": "",
         "responses": {
@@ -189,7 +193,9 @@
     },
     "/create_stellar_account": {
       "post": {
-        "tags": ["Stellar"],
+        "tags": [
+          "Stellar"
+        ],
         "description": "Generate a mnemonic phrase, derive a keypair from it, create a new Stellar account, and return account details including the mnemonic",
         "operationId": "create_stellar_account",
         "responses": {
@@ -203,7 +209,14 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["UserId", "UserEmail", "Username", "DeveloperId", "BlockchainType", "BlockchainAction"],
+                "required": [
+                  "UserId",
+                  "UserEmail",
+                  "Username",
+                  "DeveloperId",
+                  "BlockchainType",
+                  "BlockchainAction"
+                ],
                 "properties": {
                   "UserId": {
                     "type": "integer",
@@ -227,12 +240,16 @@
                   },
                   "BlockchainType": {
                     "type": "string",
-                    "enum": ["STELLAR"],
+                    "enum": [
+                      "STELLAR"
+                    ],
                     "example": "STELLAR"
                   },
                   "BlockchainAction": {
                     "type": "string",
-                    "enum": ["CREATE"],
+                    "enum": [
+                      "CREATE"
+                    ],
                     "example": "CREATE"
                   }
                 }
@@ -244,7 +261,9 @@
     },
     "/send_syte_tokens": {
       "post": {
-        "tags": ["Stellar"],
+        "tags": [
+          "Stellar"
+        ],
         "description": "Send SYTE tokens to a specified wallet address",
         "operationId": "send_syte_tokens",
         "responses": {
@@ -258,7 +277,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["UserId", "DeveloperId", "WalletAddress", "AmountPaid"],
+                "required": [
+                  "UserId",
+                  "DeveloperId",
+                  "WalletAddress",
+                  "AmountPaid"
+                ],
                 "properties": {
                   "UserId": {
                     "type": "integer",
@@ -288,7 +312,9 @@
     },
     "/get_stellar_wallet": {
       "get": {
-        "tags": ["Stellar"],
+        "tags": [
+          "Stellar"
+        ],
         "description": "Get wallet details and balances for a Stellar wallet address",
         "operationId": "get_stellar_wallet",
         "parameters": [
@@ -312,7 +338,9 @@
     },
     "/get_stellar_transaction_history": {
       "get": {
-        "tags": ["Stellar"],
+        "tags": [
+          "Stellar"
+        ],
         "description": "Get all transaction history for a Stellar wallet address",
         "operationId": "get_stellar_transaction_history",
         "parameters": [
@@ -336,7 +364,9 @@
     },
     "/activate_syte_token_trustline": {
       "post": {
-        "tags": ["Stellar"],
+        "tags": [
+          "Stellar"
+        ],
         "description": "Admin function to activate SYTE token trustline for a wallet address. IMPORTANT: Only use this function if you are certain that the account already exists on the Stellar network and only lacks the SYTE token trustline activation. This function will fail if the account does not exist on-chain.",
         "operationId": "activate_syte_token_trustline",
         "responses": {
@@ -350,7 +380,10 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["WalletAddress", "EncryptedSecretKey"],
+                "required": [
+                  "WalletAddress",
+                  "EncryptedSecretKey"
+                ],
                 "properties": {
                   "WalletAddress": {
                     "type": "string",
@@ -371,8 +404,10 @@
     },
     "/send_syteplot_nft": {
       "post": {
-        "tags": ["Stellar"],
-        "description": "Send SYTEPLOT NFT to a specified wallet address. This function will automatically add the trustline (if needed) and send the NFT (0.0000001 tokens) in one operation. The wallet address and encrypted secret key are provided in the Metadata object (buyer_wallet_id and buyer_wallet_secret).",
+        "tags": [
+          "Stellar"
+        ],
+        "description": "Send SYTEPLOT NFT to a specified wallet address. Adds or raises the SYTEPLOT trustline up to SYTEPLOT_TRUST_LIMIT so a wallet can hold multiple NFTs, then sends 1 per request. The wallet address and encrypted secret key are provided in the Metadata object (buyer_wallet_id and buyer_wallet_secret).",
         "operationId": "send_syteplot_nft",
         "responses": {
           "200": {
@@ -419,7 +454,11 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["UserId", "PlotId", "Metadata"],
+                "required": [
+                  "UserId",
+                  "PlotId",
+                  "Metadata"
+                ],
                 "properties": {
                   "UserId": {
                     "type": "integer",
@@ -433,7 +472,10 @@
                   },
                   "Metadata": {
                     "type": "object",
-                    "required": ["buyer_wallet_id", "buyer_wallet_secret"],
+                    "required": [
+                      "buyer_wallet_id",
+                      "buyer_wallet_secret"
+                    ],
                     "properties": {
                       "plot_no": {
                         "type": "integer",

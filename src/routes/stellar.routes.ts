@@ -119,7 +119,7 @@ router.post('/activate_syte_token_trustline', (req, res, next) => {
 router.post('/send_syteplot_nft', (req, res, next) => {
   // #swagger.tags = ['Stellar']
   // #swagger.operationId = 'send_syteplot_nft'
-  // #swagger.description = 'Send SYTEPLOT NFT to a specified wallet address. This function will automatically add the trustline (if needed) and send the NFT (0.0000001 tokens) in one operation. The wallet address and encrypted secret key are provided in the Metadata object (buyer_wallet_id and buyer_wallet_secret).'
+  // #swagger.description = 'Send SYTEPLOT NFT to a specified wallet address. Adds or raises the SYTEPLOT trustline up to SYTEPLOT_TRUST_LIMIT so a wallet can hold multiple NFTs, then sends 1 per request. The wallet address and encrypted secret key are provided in the Metadata object (buyer_wallet_id and buyer_wallet_secret).'
   /* #swagger.requestBody = {
       required: true,
       content: {

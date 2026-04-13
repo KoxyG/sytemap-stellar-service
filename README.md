@@ -111,8 +111,11 @@ ts-node scripts/SYTEPLOT\ NFT/set-authorization-flags.ts <issuerSecretKey> testn
 # 3. Add trustline
 ts-node scripts/SYTEPLOT\ NFT/change-trust.ts SYTEPLOT <secretKey> testnet
 
-# 4. Send 1 million NFTs to distributor
-ts-node scripts/SYTEPLOT\ NFT/send-payment.ts SYTEPLOT <distributorAddress> <issuerSecretKey> testnet
+# 4. Send SYTEPLOT payment (reads issuer/destination from .env)
+ts-node scripts/SYTEPLOT\ NFT/send-payment.ts
+
+# Optional custom amount override
+ts-node scripts/SYTEPLOT\ NFT/send-payment.ts --amount=1
 ```
 
 ## 💻 Development
